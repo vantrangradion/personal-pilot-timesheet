@@ -177,10 +177,11 @@ EPIC 5: Telemetry & Continuous Improvement
         }
       ]
       ```
-  - **Scenario 2: Execute offline verification mode with mock file**
-    - **Given** a local events JSON file provided via `--mock <path>`
-    - **When** `scripts/fetch_calendar.py --mock <path>` is executed
-    - **Then** the script parses and outputs the events without establishing a network connection to Google Calendar API.
+  - **Scenario 2: Handle missing or unauthenticated Google Calendar credentials**
+    - **Given** `credentials.json` is missing or OAuth authentication fails
+    - **When** `scripts/fetch_calendar.py` is executed
+    - **Then** the script exits with a non-zero exit code
+    - **And** prints a diagnostic error message to stderr indicating that OAuth credentials must be set up.
 
 ---
 
