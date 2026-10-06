@@ -8,6 +8,10 @@
 * **Version:** 1.0.0
 * **Date:** 2026-10-06
 * **Status:** Approved / Ready for Sprint 1 Kickoff
+* **Milestones:**
+  - **Kickoff:** Tuesday, 2026-10-06 (Start logging daily from today)
+  - **Sprint 1 Live Demo:** Friday, 2026-10-09 (Working end-to-end tool demo)
+  - **Final Evaluation:** Friday, 2026-10-30 (Continuous improvement review & token telemetry presentation)
 
 ---
 
@@ -166,6 +170,7 @@ EPIC 5: Telemetry & Continuous Improvement
     - **When** `scripts/fetch_calendar.py` is executed for the target date
     - **Then** the script queries the Google Calendar API for events between `00:00:00` and `23:59:59`
     - **And** filters out declined events (`responseStatus == 'declined'`) and transparent/all-day out-of-office blocks
+    - **And** if the access token in `token.json` is expired, the script automatically refreshes it via the OAuth refresh token and persists the updated credentials without user intervention
     - **And** outputs a chronologically sorted JSON array to stdout:
       ```json
       [
@@ -206,8 +211,9 @@ EPIC 5: Telemetry & Continuous Improvement
   - **Scenario 2: Segment activity into multiple work blocks when zero calendar events exist**
     - **Given** zero calendar events exist for the target date but commits or PRs are recorded
     - **When** `scripts/prepare_payload.py` processes the inputs
-    - **Then** it partitions the day's engineering activity into multiple distinct work blocks (e.g., morning and afternoon sessions partitioned by activity timestamps and inactivity gaps)
+    - **Then** it clusters commits and PRs into multiple distinct work blocks using an inactivity gap threshold of >= 90 minutes (with default boundary split at midday 12:30/13:30)
     - **And** avoids collapsing the entire day into a single giant entry
+    - **And** assigns a stable `block_id` (e.g. `<date>_block_1`, `<date>_block_2`) to each block
     - **And** maps commits and PRs into their corresponding time block.
   - **Scenario 3: Enforce compact input token budget for AI processing**
     - **Given** the structured time-block payload
@@ -233,10 +239,11 @@ EPIC 5: Telemetry & Continuous Improvement
     - **Then** it groups related micro-commits into a cohesive business topic rather than listing each commit separately
     - **And** appends an inline PR reference list at the end of the description: `PRs: #1182, #1174`
     - **And** does not invent or hallucinate tasks not present in the payload.
-  - **Scenario 2: Produce valid structured Timesheet Entry Schema**
-    - **Given** synthesized topic summaries
-    - **When** the AI completes execution
-    - **Then** it outputs a structured JSON object for each time block containing `date`, `start_time`, `end_time`, `description`, and `sources`.
+  - **Scenario 2: Return synthesized block descriptions by block ID**
+    - **Given** pre-segmented blocks each assigned a deterministic `block_id`
+    - **When** the AI completes topic synthesis
+    - **Then** it returns a clean JSON mapping of `block_id` to `{ "description": "<summary>. PRs: #<ids>" }`
+    - **And** deterministic scripts merge these descriptions into authoritative metadata (`date`, `start_time`, `end_time`, `sources`) without relying on the AI to reproduce timestamps or audit records.
 
 ---
 
@@ -253,17 +260,18 @@ EPIC 5: Telemetry & Continuous Improvement
 
 * **Acceptance Criteria (Given / When / Then):**
   - **Scenario 1: Upsert existing time block without duplicating rows**
-    - **Given** an entry with composite key `date: "2026-10-06"`, `start_time: "14:00"`, `end_time: "16:30"`
-    - **And** a record with this identical composite key already exists in `timesheet.jsonl`
-    - **When** `scripts/save_entry.py` is executed with the updated entry
+    - **Given** an entry identified by `date` and stable `block_id` (Google Calendar `event_id` for meetings, or deterministic `block_id` for focus sessions)
+    - **And** a record with this identical `date` and `block_id` already exists in `timesheet.jsonl`
+    - **When** `scripts/save_entry.py` is executed with updated data (even if timestamps have adjusted slightly due to subsequent commits)
     - **Then** the existing record in `timesheet.jsonl` is updated in-place without creating duplicate rows
     - **And** atomic file writing (via temporary file rename) guarantees data integrity during writes.
   - **Scenario 2: Append new distinct time block**
-    - **Given** an entry with a new time block not present in `timesheet.jsonl`
+    - **Given** an entry with a new `block_id` not present in `timesheet.jsonl` for that date
     - **When** `scripts/save_entry.py` is executed
     - **Then** the record is appended as a new line in `timesheet.jsonl` preserving all source audit trails:
       ```json
       {
+        "block_id": "event_123",
         "date": "2026-10-06",
         "start_time": "14:00",
         "end_time": "16:30",
