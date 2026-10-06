@@ -1,0 +1,6 @@
+# Install with prebuilt wheels only (newer cryptography releases have no Intel macOS wheel and need Rust to build):
+#   python3 -m venv .venv && .venv/bin/pip install --only-binary=:all: -r requirements.txt
+google-api-python-client==2.201.0
+google-auth==2.60.0
+google-auth-httplib2==0.4.4
+google-auth-oauthlib==1.5.0

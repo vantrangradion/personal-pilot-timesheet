@@ -11,13 +11,16 @@ Personal Pilot Timesheet Logger: a daily-run Skill that harvests the user's git 
 
 ## Commands
 
-Python 3, preferring the standard library. Run everything from the repo root, because tests import modules as `scripts.<module>`.
+Python 3, preferring the standard library. The only third-party dependencies are Google's client libraries for `fetch_calendar.py`, pinned in `requirements.txt` and installed into a gitignored `.venv`. Use `.venv/bin/python` for everything (plain `python3` is MacPorts and lacks them; the calendar tests are skipped there). Run everything from the repo root, because tests import modules as `scripts.<module>`.
 
 ```bash
-python3 -m unittest discover -s tests                     # all tests
-python3 -m unittest tests.test_fetch_commits              # one file
-python3 -m unittest tests.test_fetch_commits.TestFetchCommits.test_find_git_repos   # one test
-python3 scripts/fetch_commits.py --date 2026-10-06 -v     # run harvester (also: --workspace-dir, --repo, --author)
+python3 -m venv .venv && .venv/bin/pip install --only-binary=:all: -r requirements.txt   # setup (wheels only: no Rust here)
+.venv/bin/python -m unittest discover -s tests            # all tests
+.venv/bin/python -m unittest tests.test_fetch_commits     # one file
+.venv/bin/python -m unittest tests.test_fetch_commits.TestFetchCommits.test_find_git_repos   # one test
+.venv/bin/python scripts/fetch_commits.py --date 2026-10-06 -v   # run harvester (also: --workspace-dir, --repo, --author)
+.venv/bin/python scripts/fetch_calendar.py --auth         # one-time Google consent flow -> token.json
+.venv/bin/python scripts/fetch_calendar.py --date 2026-10-06 -v  # (also: --credentials, --token, --calendar-id)
 ```
 
 ## Architecture
@@ -28,7 +31,7 @@ Planned pipeline (each script is a standalone CLI that writes JSON to stdout, ex
 
 1. `scripts/fetch_commits.py` (US-1.1): scans `WORKSPACE_DIR` (default `/Users/van.tran/Documents/dev`, up to depth 2) for git repos and collects commits by the configured git user for the target date. Uses `--no-merges`, normalizes timestamps to the local timezone, and queries a ±1 day window and then filters by local date.
 2. `scripts/fetch_prs.py` (US-1.2): `gh search prs`, authored + reviewed-by `@me`.
-3. `scripts/fetch_calendar.py` (US-1.3): Google Calendar API v3 OAuth (`credentials.json` / `token.json`, both gitignored).
+3. `scripts/fetch_calendar.py` (US-1.3): Google Calendar API v3 via the official client libraries (`credentials.json` / `token.json`, both gitignored). google-auth always overrides `token_uri` with Google's real endpoint, so tests patch `google.oauth2.credentials._GOOGLE_OAUTH2_TOKEN_ENDPOINT` to the fake server.
 4. `scripts/prepare_payload.py` (US-2.1): buckets everything into time blocks. Calendar events become blocks, and commits outside events become focus blocks. With no events, it splits on a ≥90-minute inactivity gap. Each block gets a stable `block_id` (calendar `event_id`, or `<date>_block_N`).
 5. **[AI]** (US-2.2): returns only `{block_id: {"description": "<topics>. PRs: #a, #b"}}`. Scripts merge this back into the authoritative date, times, and sources.
 6. `scripts/save_entry.py` (US-3.1/3.2): idempotent upsert into `timesheet.jsonl` keyed on `(date, block_id)`, using an atomic temp-file rename. Then it re-renders `timesheet.md`. Re-runs must never duplicate blocks.
