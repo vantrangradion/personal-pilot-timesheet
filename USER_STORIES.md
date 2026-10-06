@@ -4,7 +4,7 @@
 * **Author:** Senior Product Manager
 * **Target User:** Intern / Pilot Engineer
 * **Stakeholder:** Track Leader (Tin) & Internship Supervisors
-* **Execution Runner:** Claude Code
+* **Execution Runner:** Antigravity / Claude Code (Dual Runner Compatibility)
 * **Version:** 1.0.0
 * **Date:** 2026-10-06
 * **Status:** Approved / Ready for Sprint 1 Kickoff
@@ -34,14 +34,14 @@ Following trade-off evaluation, the product architecture is finalized as:
    - **PR Platform:** **GitHub** using `gh` CLI across all detected GitHub remote repositories.
 2. **Google Calendar Integration:**
    - **Standalone Python Script (`scripts/fetch_calendar.py`)** utilizing Google Calendar API v3 with OAuth 2.0 desktop authentication (`credentials.json` and cached `token.json`).
-   - Ensures zero unnecessary token consumption by pre-filtering events before Claude receives context.
+   - Ensures zero unnecessary token consumption by pre-filtering events before the AI runner receives context.
 3. **Timesheet Storage Architecture (Dual Model):**
    - **Source of Truth (Data Layer):** `timesheet.jsonl` — machine-readable, schema-validated, and idempotent.
    - **Presentation Layer (View Layer):** `timesheet.md` — rendered human-readable Markdown matching the timesheet "Edit entry" UI specification for Friday supervisor reviews.
 4. **Packaging:**
-   - Standalone Skill directory: `timesheet-skill/` containing `SKILL.md`, `workflow.md`, and supporting deterministic scripts under `scripts/`.
+   - Standalone Skill directory: `timesheet-skill/` containing `SKILL.md`, `workflow.md`, and supporting deterministic scripts under `scripts/`. Compatible with both Antigravity skill structure and Claude Code skill invocation.
 5. **Token Telemetry:**
-   - Deterministic parser `scripts/track_tokens.py` extracting token consumption from local `~/.claude` session transcripts into `telemetry.csv`.
+   - Deterministic parser `scripts/track_tokens.py` extracting token consumption from local session transcripts into `telemetry.csv`, supporting both Antigravity (`~/.gemini/antigravity-cli/brain/.../transcript.jsonl`) and Claude Code (`~/.claude/projects/.../*.jsonl`).
 
 ---
 
@@ -62,11 +62,11 @@ EPIC 3: Dual Persistence & Idempotency
   └── US-3.2: Timesheet Markdown View Renderer [P0, Script]
 
 EPIC 4: Skill Packaging & Daily Workflow Guardrails
-  ├── US-4.1: Claude Skill & Workflow Packaging [P0, Spec]
+  ├── US-4.1: Dual Runner Skill & Workflow Packaging [P0, Spec]
   └── US-4.2: Daily Token Budget & Input Minimization Guardrail [P0, Spec]
 
 EPIC 5: Telemetry & Continuous Improvement
-  ├── US-5.1: Claude Session Transcript Token Parser [P0, Script]
+  ├── US-5.1: Dual Runner Session Transcript Token Parser [P0, Script]
   └── US-5.2: Continuous Improvement & Experimentation Journal [P1, Process]
 ```
 
@@ -211,7 +211,7 @@ EPIC 5: Telemetry & Continuous Improvement
     - **And** maps commits and PRs into their corresponding time block.
   - **Scenario 3: Enforce compact input token budget for AI processing**
     - **Given** the structured time-block payload
-    - **When** prepared for Claude's consumption
+    - **When** prepared for AI consumption (Antigravity or Claude Code)
     - **Then** raw diffs, verbose commit descriptions, and attendee lists are stripped
     - **And** the total input payload size remains under 500 tokens.
 
@@ -223,13 +223,13 @@ EPIC 5: Telemetry & Continuous Improvement
 * **Priority:** P0 (Must-Have)
 * **User Story:**
   > **As a** Supervisor reviewing daily timesheets,  
-  > **I want** Claude to group related micro-tasks into high-level business topics and append inline PR lists,  
+  > **I want** the AI agent (Antigravity or Claude Code) to group related micro-tasks into high-level business topics and append inline PR lists,  
   > **So that** timesheets are concise, executive-friendly, and avoid raw commit spam.
 
 * **Acceptance Criteria (Given / When / Then):**
   - **Scenario 1: Cluster related commits into concise business topics**
     - **Given** the pre-filtered time-block JSON payload from `scripts/prepare_payload.py`
-    - **When** Claude processes the block during the `[AI]` workflow step
+    - **When** the AI agent processes the block during the `[AI]` workflow step
     - **Then** it groups related micro-commits into a cohesive business topic rather than listing each commit separately
     - **And** appends an inline PR reference list at the end of the description: `PRs: #1182, #1174`
     - **And** does not invent or hallucinate tasks not present in the payload.
@@ -323,20 +323,21 @@ EPIC 5: Telemetry & Continuous Improvement
 
 ### Epic 4: Skill Packaging & Daily Workflow Guardrails
 
-#### US-4.1: Claude Skill & Workflow Packaging
+#### US-4.1: Dual Runner Skill & Workflow Packaging (Antigravity & Claude Code)
 * **Story ID:** `US-4.1`
 * **Type:** `[Spec]`
 * **Priority:** P0 (Must-Have)
 * **User Story:**
-  > **As an** Intern using Claude Code,  
+  > **As an** Intern using Antigravity or Claude Code,  
   > **I want** a packaged `timesheet-skill/SKILL.md` and `timesheet-skill/workflow.md`,  
-  > **So that** Claude can run the timesheet generation autonomously upon request.
+  > **So that** either agent runner can execute the timesheet generation autonomously upon request.
 
 * **Acceptance Criteria (Given / When / Then):**
-  - **Scenario 1: Configure Claude Code skill metadata**
+  - **Scenario 1: Configure portable runner skill metadata**
     - **Given** the `timesheet-skill/` directory exists
-    - **When** Claude Code indexes `timesheet-skill/SKILL.md`
-    - **Then** the skill name, invocation triggers, description, and required CLI prerequisites (`git`, `gh`, `python3`) are registered.
+    - **When** Antigravity or Claude Code indexes `timesheet-skill/SKILL.md`
+    - **Then** the skill name, invocation triggers, description, and required CLI prerequisites (`git`, `gh`, `python3`) are registered in a format compatible with both runners
+    - **And** runner-specific discovery locations are documented.
   - **Scenario 2: Enforce deterministic script vs. AI judgment tags**
     - **Given** the step-by-step procedure in `timesheet-skill/workflow.md`
     - **When** reviewing workflow steps
@@ -351,37 +352,42 @@ EPIC 5: Telemetry & Continuous Improvement
 * **Priority:** P0 (Must-Have)
 * **User Story:**
   > **As a** Track Leader,  
-  > **I want** `workflow.md` to declare an explicit daily token budget target and enforce input minimization,  
+  > **I want** `workflow.md` to declare an explicit daily token budget target and enforce input minimization across runner sessions,  
   > **So that** the intern demonstrates first-principles cost efficiency in LLM operations.
 
 * **Acceptance Criteria (Given / When / Then):**
   - **Scenario 1: Constrain daily prompt and completion tokens**
-    - **Given** daily timesheet workflow execution in Claude Code
+    - **Given** daily timesheet workflow execution in Antigravity or Claude Code
     - **When** measuring input and output tokens consumed across all runs for the day
     - **Then** total daily consumption does not exceed the target ceiling of 1,200 tokens
-    - **And** `workflow.md` documents input minimization rules prohibiting full git logs, diffs, or raw calendar JSON dumps from entering Claude's context.
+    - **And** `workflow.md` documents input minimization rules prohibiting full git logs, diffs, or raw calendar JSON dumps from entering the agent's context.
 
 ---
 
 ### Epic 5: Telemetry & Continuous Improvement
 
-#### US-5.1: Claude Session Transcript Token Parser
+#### US-5.1: Dual Runner Session Transcript Token Parser
 * **Story ID:** `US-5.1`
 * **Type:** `[Script]`
 * **Priority:** P0 (Must-Have)
 * **User Story:**
   > **As an** Intern,  
-  > **I want** a script `scripts/track_tokens.py` to extract exact token usage from local `~/.claude/*.jsonl` session files,  
-  > **So that** I have auditable empirical data for my Week 4 optimization presentation.
+  > **I want** a script `scripts/track_tokens.py` to extract exact token usage from local session transcript files generated by Antigravity or Claude Code,  
+  > **So that** I have auditable empirical data for my Week 4 optimization presentation regardless of the active runner.
 
 * **Acceptance Criteria (Given / When / Then):**
-  - **Scenario 1: Parse token telemetry from session JSONL transcripts**
+  - **Scenario 1: Parse token telemetry from Claude Code session transcripts**
     - **Given** completed Claude Code sessions in `~/.claude/`
-    - **When** `scripts/track_tokens.py` is executed
+    - **When** `scripts/track_tokens.py` is executed with Claude session paths or auto-detected Claude environment
     - **Then** it extracts `input_tokens`, `output_tokens`, `cache_read_input_tokens`, and `cache_creation_input_tokens`
-    - **And** appends a row to `telemetry.csv` containing `date`, `session_id`, `input_tokens`, `output_tokens`, `cache_tokens`, `total_tokens`, and `timestamp`.
-  - **Scenario 2: Aggregate multiple runs on the same date**
-    - **Given** multiple timesheet runs recorded on the same date
+    - **And** appends a row to `telemetry.csv` containing `date`, `runner`, `session_id`, `input_tokens`, `output_tokens`, `cache_tokens`, `total_tokens`, and `timestamp`.
+  - **Scenario 2: Parse token telemetry from Antigravity session transcripts**
+    - **Given** completed Antigravity sessions in `~/.gemini/antigravity-cli/brain/`
+    - **When** `scripts/track_tokens.py` is executed with Antigravity transcript paths or auto-detected Antigravity environment
+    - **Then** it extracts the prompt and candidate token metrics from the transcript steps
+    - **And** appends a row to `telemetry.csv` containing `date`, `runner`, `session_id`, `input_tokens`, `output_tokens`, `cache_tokens`, `total_tokens`, and `timestamp`.
+  - **Scenario 3: Aggregate multiple runs on the same date**
+    - **Given** multiple timesheet runs recorded on the same date across one or both runners
     - **When** daily summary telemetry is generated
     - **Then** `scripts/track_tokens.py` sums all session token metrics into an aggregated daily total.
 
@@ -422,12 +428,12 @@ EPIC 5: Telemetry & Continuous Improvement
 ## 6. Definition of Done (DoD) Checklist
 
 - [ ] All code implemented in clean Python 3.x scripts with docstrings and type annotations.
-- [ ] Deliverable packaged under `timesheet-skill/` with `SKILL.md` and `workflow.md`.
+- [ ] Deliverable packaged under `timesheet-skill/` with `SKILL.md` and `workflow.md` compatible with Antigravity and Claude Code.
 - [ ] `workflow.md` explicitly tags every single step as `[Script]` or `[AI]`.
 - [ ] Pulls Git commits (scanning across workspace `/Users/van.tran/Documents/dev`), GitHub PRs, and Google Calendar events automatically without manual re-typing.
 - [ ] Storage uses dual model: canonical `timesheet.jsonl` + rendered `timesheet.md`.
 - [ ] Entries match the Section 3.2 schema: one entry per time block, topic-grouped descriptions, inline `PRs:` list, and source audit trails.
 - [ ] Safe re-runs: re-executing updates existing blocks without duplicating entries.
-- [ ] `scripts/track_tokens.py` captures daily token counts into `telemetry.csv`.
+- [ ] `scripts/track_tokens.py` captures daily token counts into `telemetry.csv` for both Antigravity and Claude Code sessions.
 - [ ] `IMPROVEMENT.md` records daily review notes and optimizations.
 - [ ] Git commit history reflects incremental, disciplined PR workflow without direct commits to `main`.
