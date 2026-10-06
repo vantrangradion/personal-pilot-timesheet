@@ -32,10 +32,10 @@ Following trade-off evaluation, the product architecture is finalized as:
    - **Workspace Root:** `/Users/van.tran/Documents/dev` — the tool scans all git repositories located in this directory (e.g. `personal-pilot-timesheet`, `devops`, and future assignments/projects) to capture commits across all active projects.
    - **Tool Repository:** `/Users/van.tran/Documents/dev/personal-pilot-timesheet`.
    - **PR Platform:** **GitHub** using `gh` CLI across all detected GitHub remote repositories.
-2. **Google Calendar Integration (Option A):**
+2. **Google Calendar Integration:**
    - **Standalone Python Script (`scripts/fetch_calendar.py`)** utilizing Google Calendar API v3 with OAuth 2.0 desktop authentication (`credentials.json` and cached `token.json`).
    - Ensures zero unnecessary token consumption by pre-filtering events before Claude receives context.
-3. **Timesheet Storage Architecture (Option C — Dual Model):**
+3. **Timesheet Storage Architecture (Dual Model):**
    - **Source of Truth (Data Layer):** `timesheet.jsonl` — machine-readable, schema-validated, and idempotent.
    - **Presentation Layer (View Layer):** `timesheet.md` — rendered human-readable Markdown matching the timesheet "Edit entry" UI specification for Friday supervisor reviews.
 4. **Packaging:**
@@ -88,7 +88,7 @@ EPIC 5: Telemetry & Continuous Improvement
   > **So that** my engineering outputs across all active assignments and projects are collected without manual copy-pasting.
 
 * **Acceptance Criteria:**
-  1. Accepts an optional `--workspace-dir` parameter (defaults to `/Users/van.tran/Documents/dev` or env `DEV_WORKSPACE_DIR`).
+  1. Accepts a `--workspace-dir` parameter (defaults to `/Users/van.tran/Documents/dev` or env `DEV_WORKSPACE_DIR`).
   2. Scans child directories for Git repositories (`.git`).
   3. Executes `git log` per repository, filtering by `--author="$(git config user.email)"` (or `--author="$(git config user.name)"`).
   4. Pulls commits between `00:00:00` and `23:59:59` of the specified date (defaults to current local date).
