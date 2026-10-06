@@ -213,9 +213,9 @@ EPIC 5: Telemetry & Continuous Improvement
   - **Scenario 2: Segment activity into multiple work blocks when zero calendar events exist**
     - **Given** zero calendar events exist for the target date but commits or PRs are recorded
     - **When** `scripts/prepare_payload.py` processes the inputs
-    - **Then** it normalizes all timestamps to the local workspace timezone and clusters commits and PRs into multiple distinct work blocks using an inactivity gap threshold of >= 90 minutes (with default boundary split at midday 12:30/13:30)
+    - **Then** it normalizes all timestamps to the local workspace timezone and clusters commits and PRs into multiple distinct work blocks using an inactivity gap threshold of >= 90 minutes (with default boundary splits at the 12:00–13:00 lunch break)
     - **And** avoids collapsing the entire day into a single giant entry
-    - **And** assigns a stable `block_id` (e.g. `<date>_block_1`, `<date>_block_2`) to each block
+    - **And** assigns a stable `block_id` to each block, anchored to the author time of the block's earliest commit (e.g. `<date>_focus_0947`), or to the PR for PR-only blocks (e.g. `<date>_focus_<repo>-pr14`), so re-runs, amends, rebases, and activity added between blocks never renumber existing blocks
     - **And** maps commits and PRs into their corresponding time block.
   - **Scenario 3: Enforce compact input token budget for AI processing**
     - **Given** the structured time-block payload
@@ -286,6 +286,25 @@ EPIC 5: Telemetry & Continuous Improvement
         "created_at": "2026-10-06T16:35:00+07:00"
       }
       ```
+  - **Scenario 3: Prune focus blocks absorbed by a merge on re-run**
+    - **Given** `timesheet.jsonl` holds focus blocks `<date>_focus_0900` and `<date>_focus_1100` from an earlier run
+    - **And** a later run includes new activity that fills the gap between them, so `scripts/prepare_payload.py` merges them into a single block `<date>_focus_0900`
+    - **When** `scripts/save_entry.py` persists the later run's blocks for that date
+    - **Then** `<date>_focus_0900` is updated in place
+    - **And** focus blocks for that date that the current run no longer produces (here `<date>_focus_1100`) are removed, so no stale rows overlap the merged block
+    - **And** rows for other dates are left untouched.
+  - **Scenario 4: Prune calendar blocks for meetings cancelled or declined after logging**
+    - **Given** `timesheet.jsonl` holds a calendar block `event_123` for a date
+    - **And** the meeting is later cancelled or declined, so `scripts/fetch_calendar.py` no longer returns it
+    - **When** a re-run in which `scripts/fetch_calendar.py` succeeded (exit code `0`) persists that date's blocks
+    - **Then** calendar blocks for that date that the current run no longer produces (here `event_123`) are removed
+    - **And** any commits and PRs that fell inside the removed meeting are carried by the focus blocks the re-run produces in its place.
+  - **Scenario 5: Never prune from a partial run**
+    - **Given** a re-run in which any harvester (`fetch_commits.py`, `fetch_prs.py`, or `fetch_calendar.py`) failed (non-zero exit, e.g. expired OAuth, unauthenticated `gh`, or network timeout)
+    - **And** the workflow passed each failed source to `scripts/prepare_payload.py` (`--failed-source commits|prs|calendar`, repeatable), which records it in the `--blocks-out` file as `{"date": "<date>", "failed_sources": ["calendar"], "blocks": [...]}` (`failed_sources` is `[]` on a complete run)
+    - **When** `scripts/save_entry.py` persists that run's blocks, reading `failed_sources` from the blocks file
+    - **Then** no blocks are removed for that date (an empty result from a failed fetch must not be read as "all meetings cancelled" or "no work done")
+    - **And** the run is reported as partial on stderr.
 
 ---
 
@@ -431,7 +450,6 @@ EPIC 5: Telemetry & Continuous Improvement
    - End-to-end execution of all `[Script]` steps must complete within $< 5$ seconds on local developer hardware.
 4. **Git Discipline:**
    - Every feature/story branch follows the convention: `feat/<story-id>-<slug>` (e.g., `feat/us-1.1-git-commits`).
-   - One task = one small branch = one focused PR with description; no direct commits to `main`.
 
 ---
 
