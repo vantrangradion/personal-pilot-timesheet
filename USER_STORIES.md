@@ -114,22 +114,23 @@ EPIC 5: Telemetry & Continuous Improvement
 
 ---
 
-#### US-1.2: GitHub Pull Request Harvester (Multi-Repo)
+#### US-1.2: GitHub Pull Request Harvester (GitHub CLI)
 * **Story ID:** `US-1.2`
 * **Type:** `[Script]`
 * **Priority:** P0 (Must-Have)
 * **User Story:**
   > **As an** Intern,  
-  > **I want** a script `scripts/fetch_prs.py` using GitHub CLI (`gh`) or REST API to retrieve PRs I opened, reviewed, or had merged today across my active repositories in `/Users/van.tran/Documents/dev`,  
-  > **So that** my collaboration and code review efforts across all projects are captured in my timesheet.
+  > **I want** a script `scripts/fetch_prs.py` using the GitHub CLI (`gh search prs`) to retrieve PRs I opened, reviewed, or had merged today across my active repositories in `/Users/van.tran/Documents/dev`,  
+  > **So that** my collaboration and code review efforts across all projects are captured in my timesheet without manual tracking.
 
 * **Acceptance Criteria (Given / When / Then):**
-  - **Scenario 1: Retrieve PRs opened, reviewed, or merged today**
+  - **Scenario 1: Retrieve PRs opened, reviewed, or merged today via gh CLI**
     - **Given** active repositories in `/Users/van.tran/Documents/dev` with GitHub remotes
     - **And** the user is authenticated with GitHub CLI (`gh auth status`)
-    - **When** `scripts/fetch_prs.py` is executed for the target date
-    - **Then** the script retrieves PRs opened, reviewed, or merged today by the user
-    - **And** outputs a compact JSON array to stdout with schema:
+    - **When** `scripts/fetch_prs.py` executes `gh search prs` for the target date
+    - **Then** it queries both authored PRs (`--author="@me"`) and reviewed PRs (`--reviewed-by="@me"`) updated on the target date
+    - **And** applies field projection via `--json repository,number,title,state,url,updatedAt` to minimize payload size
+    - **And** outputs a normalized, compact JSON array to stdout with schema:
       ```json
       [
         {
@@ -142,8 +143,8 @@ EPIC 5: Telemetry & Continuous Improvement
         }
       ]
       ```
-  - **Scenario 2: Handle unauthenticated or missing GitHub credentials**
-    - **Given** the GitHub CLI is unauthenticated or network connection fails
+  - **Scenario 2: Handle unauthenticated GitHub CLI state**
+    - **Given** the GitHub CLI is unauthenticated (`gh auth status` returns error)
     - **When** `scripts/fetch_prs.py` is executed
     - **Then** the script exits with a non-zero exit code
     - **And** prints a diagnostic error message to stderr explaining how to authenticate (`gh auth login`).
