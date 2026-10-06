@@ -87,25 +87,30 @@ EPIC 5: Telemetry & Continuous Improvement
   > **I want** a deterministic script `scripts/fetch_commits.py` to scan the workspace directory (`/Users/van.tran/Documents/dev`) and extract all git commits authored by me today across all repositories,  
   > **So that** my engineering outputs across all active assignments and projects are collected without manual copy-pasting.
 
-* **Acceptance Criteria:**
-  1. Accepts a `--workspace-dir` parameter (defaults to `/Users/van.tran/Documents/dev` or env `DEV_WORKSPACE_DIR`).
-  2. Scans child directories for Git repositories (`.git`).
-  3. Executes `git log` per repository, filtering by `--author="$(git config user.email)"` (or `--author="$(git config user.name)"`).
-  4. Pulls commits between `00:00:00` and `23:59:59` of the specified date (defaults to current local date).
-  5. Filters out merge commits (`--no-merges`).
-  6. Returns a strictly validated JSON array to stdout containing the repository name:
-     ```json
-     [
-       {
-         "repo": "personal-pilot-timesheet",
-         "hash": "8f3b21a",
-         "timestamp": "2026-10-06T11:24:10+07:00",
-         "message": "feat(ingest): add git log commit parser",
-         "files_changed_count": 2
-       }
-     ]
-     ```
-  7. Returns exit code `0` with `[]` if no commits exist across any repositories for the date.
+* **Acceptance Criteria (Given / When / Then):**
+  - **Scenario 1: Extract commits across child repositories for the target date**
+    - **Given** a workspace root directory `/Users/van.tran/Documents/dev` containing one or more Git repositories
+    - **And** commits have been authored on the target date matching the configured Git user (`git config user.email` or `user.name`)
+    - **When** `scripts/fetch_commits.py` is executed with `--workspace-dir /Users/van.tran/Documents/dev` (or default environment)
+    - **Then** the script exits with status code `0`
+    - **And** outputs a valid JSON array to stdout where each object contains `repo`, `hash`, `timestamp`, `message`, and `files_changed_count`:
+      ```json
+      [
+        {
+          "repo": "personal-pilot-timesheet",
+          "hash": "8f3b21a",
+          "timestamp": "2026-10-06T11:24:10+07:00",
+          "message": "feat(ingest): add git log commit parser",
+          "files_changed_count": 2
+        }
+      ]
+      ```
+    - **And** merge commits (`--no-merges`) are excluded.
+  - **Scenario 2: No commits authored on the target date**
+    - **Given** no commits were authored by the user on the target date across scanned repositories
+    - **When** `scripts/fetch_commits.py` is executed
+    - **Then** the script exits with status code `0`
+    - **And** outputs an empty JSON array `[]` to stdout.
 
 ---
 
@@ -118,27 +123,30 @@ EPIC 5: Telemetry & Continuous Improvement
   > **I want** a script `scripts/fetch_prs.py` using GitHub CLI (`gh`) or REST API to retrieve PRs I opened, reviewed, or had merged today across my active repositories in `/Users/van.tran/Documents/dev`,  
   > **So that** my collaboration and code review efforts across all projects are captured in my timesheet.
 
-* **Acceptance Criteria:**
-  1. Identifies GitHub remotes from detected git repositories in `/Users/van.tran/Documents/dev`.
-  2. Uses `gh` CLI commands (`gh pr list`, `gh search prs`) or GitHub API for each repository or user handle.
-  3. Queries for:
-     - PRs opened by the user today.
-     - PRs reviewed by the user today (approvals, comments, changes requested).
-     - User PRs merged today.
-  4. Emits compact JSON schema including repository identifier:
-     ```json
-     [
-       {
-         "repo": "personal-pilot-timesheet",
-         "number": 14,
-         "title": "feat: add Google Calendar OAuth client",
-         "status": "opened",
-         "url": "https://github.com/org/repo/pull/14",
-         "updated_at": "2026-10-06T14:10:00+07:00"
-       }
-     ]
-     ```
-  5. Detects unauthenticated `gh` status cleanly and outputs actionable error guidance.
+* **Acceptance Criteria (Given / When / Then):**
+  - **Scenario 1: Retrieve PRs opened, reviewed, or merged today**
+    - **Given** active repositories in `/Users/van.tran/Documents/dev` with GitHub remotes
+    - **And** the user is authenticated with GitHub CLI (`gh auth status`)
+    - **When** `scripts/fetch_prs.py` is executed for the target date
+    - **Then** the script retrieves PRs opened, reviewed, or merged today by the user
+    - **And** outputs a compact JSON array to stdout with schema:
+      ```json
+      [
+        {
+          "repo": "personal-pilot-timesheet",
+          "number": 14,
+          "title": "feat: add Google Calendar OAuth client",
+          "status": "opened",
+          "url": "https://github.com/org/repo/pull/14",
+          "updated_at": "2026-10-06T14:10:00+07:00"
+        }
+      ]
+      ```
+  - **Scenario 2: Handle unauthenticated or missing GitHub credentials**
+    - **Given** the GitHub CLI is unauthenticated or network connection fails
+    - **When** `scripts/fetch_prs.py` is executed
+    - **Then** the script exits with a non-zero exit code
+    - **And** prints a diagnostic error message to stderr explaining how to authenticate (`gh auth login`).
 
 ---
 
@@ -151,23 +159,27 @@ EPIC 5: Telemetry & Continuous Improvement
   > **I want** a script `scripts/fetch_calendar.py` that connects to the Google Calendar API via OAuth 2.0 (`credentials.json`),  
   > **So that** my daily meetings and calendar blocks are automatically retrieved.
 
-* **Acceptance Criteria:**
-  1. Uses the official Google API Python Client (`google-api-python-client`, `google-auth-oauthlib`).
-  2. Authenticates using `credentials.json` and caches authorization credentials in `token.json` for non-interactive daily runs.
-  3. Fetches calendar events between `00:00:00` and `23:59:59` for the target day.
-  4. Filters out declined events (`responseStatus == 'declined'`) and transparent/all-day out-of-office blocks.
-  5. Emits sorted JSON array:
-     ```json
-     [
-       {
-         "id": "event_123",
-         "title": "Daily Standup",
-         "start": "2026-10-06T09:30:00+07:00",
-         "end": "2026-10-06T10:00:00+07:00"
-       }
-     ]
-     ```
-  6. Supports a fallback `--mock <path>` flag for offline testing or setup verification.
+* **Acceptance Criteria (Given / When / Then):**
+  - **Scenario 1: Authenticate and retrieve daily calendar events**
+    - **Given** valid OAuth client configuration in `credentials.json` and cached user credentials in `token.json`
+    - **When** `scripts/fetch_calendar.py` is executed for the target date
+    - **Then** the script queries the Google Calendar API for events between `00:00:00` and `23:59:59`
+    - **And** filters out declined events (`responseStatus == 'declined'`) and transparent/all-day out-of-office blocks
+    - **And** outputs a chronologically sorted JSON array to stdout:
+      ```json
+      [
+        {
+          "id": "event_123",
+          "title": "Daily Standup",
+          "start": "2026-10-06T09:30:00+07:00",
+          "end": "2026-10-06T10:00:00+07:00"
+        }
+      ]
+      ```
+  - **Scenario 2: Execute offline verification mode with mock file**
+    - **Given** a local events JSON file provided via `--mock <path>`
+    - **When** `scripts/fetch_calendar.py --mock <path>` is executed
+    - **Then** the script parses and outputs the events without establishing a network connection to Google Calendar API.
 
 ---
 
@@ -182,16 +194,22 @@ EPIC 5: Telemetry & Continuous Improvement
   > **I want** `scripts/prepare_payload.py` to bucket calendar events, commits, and PRs into cohesive time blocks,  
   > **So that** the AI receives a pre-organized, minimal token payload.
 
-* **Acceptance Criteria:**
-  1. Partitions the day into discrete time blocks using calendar events as primary boundaries.
-  2. Fills non-calendar gaps where commit activity occurred into dedicated focus blocks (e.g., `10:00 - 12:30 | Development Block`).
-  3. **Zero-Calendar Rule:** If no calendar events exist for the day, creates a single default work block (`09:00 - 18:00`) containing all daily commits and PRs.
-  4. Maps commits and PRs into the time block matching their timestamps.
-  5. Produces an ultra-compressed payload for Claude with:
-     - `block_start`, `block_end`, `block_type` (Meeting vs. Focus).
-     - Raw commit subjects and commit hashes.
-     - Associated PR numbers and titles.
-  6. Enforces payload budget: total input payload for the day MUST remain under 500 tokens.
+* **Acceptance Criteria (Given / When / Then):**
+  - **Scenario 1: Segment daily events into chronological calendar and focus blocks**
+    - **Given** daily calendar events, Git commits, and GitHub PR records from the harvester scripts
+    - **When** `scripts/prepare_payload.py` is executed
+    - **Then** it creates chronological time blocks matching calendar events
+    - **And** maps commits and PRs into the time block containing their timestamp
+    - **And** generates distinct focus blocks for commit activity occurring outside calendar events.
+  - **Scenario 2: Fallback when zero calendar events exist**
+    - **Given** zero calendar events exist for the day but commits or PRs are recorded
+    - **When** `scripts/prepare_payload.py` processes the inputs
+    - **Then** it produces a single default work block (`09:00 - 18:00`) containing all daily commits and PRs.
+  - **Scenario 3: Enforce compact input token budget for AI processing**
+    - **Given** the structured time-block payload
+    - **When** prepared for Claude's consumption
+    - **Then** raw diffs, verbose commit descriptions, and attendee lists are stripped
+    - **And** the total input payload size remains under 500 tokens.
 
 ---
 
@@ -204,12 +222,17 @@ EPIC 5: Telemetry & Continuous Improvement
   > **I want** Claude to group related micro-tasks into high-level business topics and append inline PR lists,  
   > **So that** timesheets are concise, executive-friendly, and avoid raw commit spam.
 
-* **Acceptance Criteria:**
-  1. **Strict Input Boundary:** Claude only processes the pre-filtered JSON from `US-2.1`. No raw `git log` or raw calendar dumps are allowed.
-  2. **Topic Grouping:** Synthesizes multiple related commits into one coherent topic (e.g., combines 4 commits on OAuth token refresh and scopes into: *"Google Calendar OAuth 2.0 integration & token refresh lifecycle"*).
-  3. **Inline PR Format:** Appends PRs as a single comma-separated list at the end of the description: `PRs: #1182, #1174`.
-  4. **Strict Grounding:** The AI must never invent tasks or extrapolate details not present in the script payload.
-  5. Outputs a structured JSON matching the Timesheet Entry Schema for each time block.
+* **Acceptance Criteria (Given / When / Then):**
+  - **Scenario 1: Cluster related commits into concise business topics**
+    - **Given** the pre-filtered time-block JSON payload from `scripts/prepare_payload.py`
+    - **When** Claude processes the block during the `[AI]` workflow step
+    - **Then** it groups related micro-commits into a cohesive business topic rather than listing each commit separately
+    - **And** appends an inline PR reference list at the end of the description: `PRs: #1182, #1174`
+    - **And** does not invent or hallucinate tasks not present in the payload.
+  - **Scenario 2: Produce valid structured Timesheet Entry Schema**
+    - **Given** synthesized topic summaries
+    - **When** the AI completes execution
+    - **Then** it outputs a structured JSON object for each time block containing `date`, `start_time`, `end_time`, `description`, and `sources`.
 
 ---
 
@@ -224,26 +247,31 @@ EPIC 5: Telemetry & Continuous Improvement
   > **I want** `scripts/save_entry.py` to persist daily entries into `timesheet.jsonl` with upsert capability,  
   > **So that** re-running the tool on the same day never creates duplicate timesheet blocks.
 
-* **Acceptance Criteria:**
-  1. Maintains `timesheet.jsonl` as the canonical database of all daily records.
-  2. Uses composite unique key: `date + start_time + end_time`.
-  3. If an entry with the same composite key already exists, replaces it with the updated payload.
-  4. Writes atomically using a temporary file rename to prevent file corruption during crashes.
-  5. Stores full source traceability inside each record:
-     ```json
-     {
-       "date": "2026-10-06",
-       "start_time": "14:00",
-       "end_time": "16:30",
-       "description": "Implemented Google Calendar OAuth client and telemetry parser. PRs: #3",
-       "sources": {
-         "calendar_event": "Focus: Development",
-         "commits": ["8f3b21a", "b2c3d4e"],
-         "prs": [3]
-       },
-       "created_at": "2026-10-06T16:35:00+07:00"
-     }
-     ```
+* **Acceptance Criteria (Given / When / Then):**
+  - **Scenario 1: Upsert existing time block without duplicating rows**
+    - **Given** an entry with composite key `date: "2026-10-06"`, `start_time: "14:00"`, `end_time: "16:30"`
+    - **And** a record with this identical composite key already exists in `timesheet.jsonl`
+    - **When** `scripts/save_entry.py` is executed with the updated entry
+    - **Then** the existing record in `timesheet.jsonl` is updated in-place without creating duplicate rows
+    - **And** atomic file writing (via temporary file rename) guarantees data integrity during writes.
+  - **Scenario 2: Append new distinct time block**
+    - **Given** an entry with a new time block not present in `timesheet.jsonl`
+    - **When** `scripts/save_entry.py` is executed
+    - **Then** the record is appended as a new line in `timesheet.jsonl` preserving all source audit trails:
+      ```json
+      {
+        "date": "2026-10-06",
+        "start_time": "14:00",
+        "end_time": "16:30",
+        "description": "Implemented Google Calendar OAuth client and telemetry parser. PRs: #3",
+        "sources": {
+          "calendar_event": "Focus: Development",
+          "commits": ["8f3b21a", "b2c3d4e"],
+          "prs": [3]
+        },
+        "created_at": "2026-10-06T16:35:00+07:00"
+      }
+      ```
 
 ---
 
@@ -256,29 +284,36 @@ EPIC 5: Telemetry & Continuous Improvement
   > **I want** the script to automatically render `timesheet.md` from `timesheet.jsonl`,  
   > **So that** I can review clean, human-readable timesheet entries during Friday reviews.
 
-* **Acceptance Criteria:**
-  1. Triggered automatically following any write to `timesheet.jsonl`.
-  2. Renders chronologically grouped entries matching the Section 9 "Edit entry" UI specification:
-     ```markdown
-     # Timesheet Log
+* **Acceptance Criteria (Given / When / Then):**
+  - **Scenario 1: Automatically render human-readable Markdown from JSONL state**
+    - **Given** one or more records persisted in `timesheet.jsonl`
+    - **When** `scripts/save_entry.py` finishes persisting entries (or when render script is invoked)
+    - **Then** `timesheet.md` is regenerated matching the Section 9 "Edit entry" UI specification
+    - **And** entries are grouped chronologically by date under Markdown headers
+    - **And** each block clearly presents `Date`, `Start time`, `End time`, `Description` (including inline PRs), and `Sources`:
+      ```markdown
+      # Timesheet Log
 
-     ## 2026-10-06 (Tuesday)
+      ## 2026-10-06 (Tuesday)
 
-     ### 09:30 - 10:00 | Standup & Planning
-     - **Date:** 2026-10-06
-     - **Start time:** 09:30
-     - **End time:** 10:00
-     - **Description:** Weekly sprint kickoff and timesheet architecture review.
-     - **Sources:** Calendar: "Team Standup"
+      ### 09:30 - 10:00 | Standup & Planning
+      - **Date:** 2026-10-06
+      - **Start time:** 09:30
+      - **End time:** 10:00
+      - **Description:** Weekly sprint kickoff and timesheet architecture review.
+      - **Sources:** Calendar: "Team Standup"
 
-     ### 10:00 - 12:30 | Core Engineering
-     - **Date:** 2026-10-06
-     - **Start time:** 10:00
-     - **End time:** 12:30
-     - **Description:** Git commit harvester and CLI test suite implementation. PRs: #1, #2
-     - **Sources:** Commits: `8f3b21a`, `4d5e6f7`; PRs: #1, #2
-     ```
-  3. Supports clean visual diffs in Git pull requests.
+      ### 10:00 - 12:30 | Core Engineering
+      - **Date:** 2026-10-06
+      - **Start time:** 10:00
+      - **End time:** 12:30
+      - **Description:** Git commit harvester and CLI test suite implementation. PRs: #1, #2
+      - **Sources:** Commits: `8f3b21a`, `4d5e6f7`; PRs: #1, #2
+      ```
+  - **Scenario 2: Maintain clean Git diffs**
+    - **Given** modified or appended entries in `timesheet.jsonl`
+    - **When** `timesheet.md` is re-rendered
+    - **Then** unchanged past dates and blocks remain identical, producing clean, verifiable diffs in Git.
 
 ---
 
@@ -293,19 +328,16 @@ EPIC 5: Telemetry & Continuous Improvement
   > **I want** a packaged `timesheet-skill/SKILL.md` and `timesheet-skill/workflow.md`,  
   > **So that** Claude can run the timesheet generation autonomously upon request.
 
-* **Acceptance Criteria:**
-  1. `SKILL.md` defines:
-     - Name: `personal-pilot-timesheet`
-     - Description: Daily personal timesheet generator from Git, GitHub, and Google Calendar.
-     - Triggers: User prompts like `"log today's timesheet"` or `"generate timesheet for today"`.
-     - Required CLI prerequisites (`git`, `gh`, `python3`).
-  2. `workflow.md` details every step sequentially with mandatory role tags:
-     - `Step 1 [Script]: Run data collection scripts (git, gh, calendar)`
-     - `Step 2 [Script]: Run prepare_payload.py to segment time blocks`
-     - `Step 3 [AI]: Synthesize topic descriptions and format PR list`
-     - `Step 4 [Script]: Run save_entry.py and render timesheet.md`
-     - `Step 5 [Script]: Run track_tokens.py to capture session telemetry`
-  3. Conforms strictly to the Gradion rule: No `[AI]` tag allowed for any deterministic work.
+* **Acceptance Criteria (Given / When / Then):**
+  - **Scenario 1: Configure Claude Code skill metadata**
+    - **Given** the `timesheet-skill/` directory exists
+    - **When** Claude Code indexes `timesheet-skill/SKILL.md`
+    - **Then** the skill name, invocation triggers, description, and required CLI prerequisites (`git`, `gh`, `python3`) are registered.
+  - **Scenario 2: Enforce deterministic script vs. AI judgment tags**
+    - **Given** the step-by-step procedure in `timesheet-skill/workflow.md`
+    - **When** reviewing workflow steps
+    - **Then** every single step is explicitly prefixed with either `[Script]` or `[AI]`
+    - **And** zero `[AI]` tags are assigned to deterministic actions such as API fetching, parsing, JSON manipulation, file writes, or math.
 
 ---
 
@@ -318,13 +350,12 @@ EPIC 5: Telemetry & Continuous Improvement
   > **I want** `workflow.md` to declare an explicit daily token budget target and enforce input minimization,  
   > **So that** the intern demonstrates first-principles cost efficiency in LLM operations.
 
-* **Acceptance Criteria:**
-  1. Declares target daily token budget: **$\le$ 1,200 total tokens per day** (prompt + completion).
-  2. Documents input minimization rules:
-     - No full git logs or file diffs passed to Claude.
-     - No raw Google Calendar event dumps or attendee lists passed to Claude.
-     - Only aggregated, pre-filtered block JSON from `scripts/prepare_payload.py`.
-  3. Explains the rationale in `workflow.md` for Friday review evaluation.
+* **Acceptance Criteria (Given / When / Then):**
+  - **Scenario 1: Constrain daily prompt and completion tokens**
+    - **Given** daily timesheet workflow execution in Claude Code
+    - **When** measuring input and output tokens consumed across all runs for the day
+    - **Then** total daily consumption does not exceed the target ceiling of 1,200 tokens
+    - **And** `workflow.md` documents input minimization rules prohibiting full git logs, diffs, or raw calendar JSON dumps from entering Claude's context.
 
 ---
 
@@ -339,16 +370,16 @@ EPIC 5: Telemetry & Continuous Improvement
   > **I want** a script `scripts/track_tokens.py` to extract exact token usage from local `~/.claude/*.jsonl` session files,  
   > **So that** I have auditable empirical data for my Week 4 optimization presentation.
 
-* **Acceptance Criteria:**
-  1. Scans `~/.claude/projects/` (or current session transcript directory) for the active Claude session ID.
-  2. Sums:
-     - `input_tokens`
-     - `output_tokens`
-     - `cache_read_input_tokens`
-     - `cache_creation_input_tokens`
-  3. Appends an entry to `telemetry.csv` with columns:
-     `date,session_id,input_tokens,output_tokens,cache_tokens,total_tokens,timestamp`.
-  4. Correctly aggregates multiple runs on the same day into a unified daily total.
+* **Acceptance Criteria (Given / When / Then):**
+  - **Scenario 1: Parse token telemetry from session JSONL transcripts**
+    - **Given** completed Claude Code sessions in `~/.claude/`
+    - **When** `scripts/track_tokens.py` is executed
+    - **Then** it extracts `input_tokens`, `output_tokens`, `cache_read_input_tokens`, and `cache_creation_input_tokens`
+    - **And** appends a row to `telemetry.csv` containing `date`, `session_id`, `input_tokens`, `output_tokens`, `cache_tokens`, `total_tokens`, and `timestamp`.
+  - **Scenario 2: Aggregate multiple runs on the same date**
+    - **Given** multiple timesheet runs recorded on the same date
+    - **When** daily summary telemetry is generated
+    - **Then** `scripts/track_tokens.py` sums all session token metrics into an aggregated daily total.
 
 ---
 
@@ -361,15 +392,12 @@ EPIC 5: Telemetry & Continuous Improvement
   > **I want** an `IMPROVEMENT.md` journal maintained daily by the intern,  
   > **So that** the intern proves the continuous improvement loop (*log $\to$ review what broke $\to$ improve $\to$ log again*).
 
-* **Acceptance Criteria:**
-  1. Establishes `IMPROVEMENT.md` with standard daily entry schema:
-     - `Date`
-     - `Observed Failure / Edge Case / Inefficiency`
-     - `Root Cause (Script vs. Prompt)`
-     - `Action Taken (Code change, rule tightening, script migration)`
-     - `Token & Quality Delta`
-  2. Documents the baseline kickoff entry for **Week 1 Day 1 (Tue 6 Oct)**.
-  3. Provides the source narrative for the Week 4 final presentation comparison (high-token day vs. optimized day).
+* **Acceptance Criteria (Given / When / Then):**
+  - **Scenario 1: Log daily reviews and optimizations**
+    - **Given** a daily timesheet run has completed
+    - **When** an edge case, failure, or prompt inefficiency is observed
+    - **Then** a record is added to `IMPROVEMENT.md` documenting Date, Observed Issue, Root Cause, Action Taken, and Token Delta
+    - **And** the baseline kickoff entry for Week 1 Day 1 (Tue 6 Oct) is initialized.
 
 ---
 
