@@ -1,0 +1,44 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Project
+
+Personal Pilot Timesheet Logger: a daily-run Skill that harvests the user's git commits, GitHub PRs, and Google Calendar events and turns them into timesheet entries (one per time block). The requirements live in two docs; read them before implementing a story:
+
+- `assignment-1-personal-pilot-timesheet.md` is the original assignment brief (grading criteria, Definition of Done, timeline).
+- `USER_STORIES.md` is the PRD with locked architecture decisions and Given/When/Then acceptance criteria per story (US-1.1 … US-5.2). Implement against these acceptance criteria exactly (output JSON shapes, file names, CLI flags).
+
+## Commands
+
+Python 3, preferring the standard library. Run everything from the repo root, because tests import modules as `scripts.<module>`.
+
+```bash
+python3 -m unittest discover -s tests                     # all tests
+python3 -m unittest tests.test_fetch_commits              # one file
+python3 -m unittest tests.test_fetch_commits.TestFetchCommits.test_find_git_repos   # one test
+python3 scripts/fetch_commits.py --date 2026-10-06 -v     # run harvester (also: --workspace-dir, --repo, --author)
+```
+
+## Architecture
+
+The core design rule, which is what the assignment grades: **deterministic work is a `[Script]`; only real judgment goes to `[AI]`.** Never move parsing, filtering, time math, JSON reshaping, or file writes into the AI step. The AI step must receive a minimal payload (under 500 tokens of input, with a daily budget of 1,200 tokens) and must never receive raw git logs, diffs, or full calendar JSON.
+
+Planned pipeline (each script is a standalone CLI that writes JSON to stdout, exits 0 with `[]` when there is no data, and exits non-zero with a stderr diagnostic on auth or config failures):
+
+1. `scripts/fetch_commits.py` (US-1.1): scans `WORKSPACE_DIR` (default `/Users/van.tran/Documents/dev`, up to depth 2) for git repos and collects commits by the configured git user for the target date. Uses `--no-merges`, normalizes timestamps to the local timezone, and queries a ±1 day window and then filters by local date.
+2. `scripts/fetch_prs.py` (US-1.2): `gh search prs`, authored + reviewed-by `@me`.
+3. `scripts/fetch_calendar.py` (US-1.3): Google Calendar API v3 OAuth (`credentials.json` / `token.json`, both gitignored).
+4. `scripts/prepare_payload.py` (US-2.1): buckets everything into time blocks. Calendar events become blocks, and commits outside events become focus blocks. With no events, it splits on a ≥90-minute inactivity gap. Each block gets a stable `block_id` (calendar `event_id`, or `<date>_block_N`).
+5. **[AI]** (US-2.2): returns only `{block_id: {"description": "<topics>. PRs: #a, #b"}}`. Scripts merge this back into the authoritative date, times, and sources.
+6. `scripts/save_entry.py` (US-3.1/3.2): idempotent upsert into `timesheet.jsonl` keyed on `(date, block_id)`, using an atomic temp-file rename. Then it re-renders `timesheet.md`. Re-runs must never duplicate blocks.
+7. `scripts/track_tokens.py` (US-5.1): parses Claude Code (`~/.claude/projects/...`) and Antigravity transcripts into `telemetry.csv`.
+
+The deliverable is packaged as `timesheet-skill/` (`SKILL.md` + `workflow.md`, where every step is tagged `[Script]` or `[AI]`) and must work with both Claude Code and Antigravity. `IMPROVEMENT.md` is the daily log → review → improve journal.
+
+## Conventions
+
+- Commit messages are conventional style with the story ID, e.g. `feat(ingest): ... (US-1.1)`. Commit messages are a single subject line only, with no body (no bullet lists, explanatory paragraphs, or `Co-Authored-By` trailers).
+- Scripts use type annotations and docstrings, `argparse` with a `main(argv) -> int` entry point (so tests can call `main` directly), and verbose diagnostics go to stderr only.
+- Tests use `unittest` and build real temporary git repos (not mocks) where git behavior matters.
+- End-to-end `[Script]` steps should finish in under 5 seconds.
