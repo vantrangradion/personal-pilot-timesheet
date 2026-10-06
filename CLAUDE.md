@@ -21,6 +21,7 @@ python3 -m venv .venv && .venv/bin/pip install --only-binary=:all: -r requiremen
 .venv/bin/python scripts/fetch_commits.py --date 2026-10-06 -v   # run harvester (also: --workspace-dir, --repo, --author)
 .venv/bin/python scripts/fetch_calendar.py --auth         # one-time Google consent flow -> token.json
 .venv/bin/python scripts/fetch_calendar.py --date 2026-10-06 -v  # (also: --credentials, --token, --calendar-id)
+.venv/bin/python scripts/prepare_payload.py --date 2026-10-06 --commits c.json --prs p.json --calendar e.json --blocks-out blocks.json -v
 ```
 
 ## Architecture
@@ -32,7 +33,7 @@ Planned pipeline (each script is a standalone CLI that writes JSON to stdout, ex
 1. `scripts/fetch_commits.py` (US-1.1): scans `WORKSPACE_DIR` (default `/Users/van.tran/Documents/dev`, up to depth 2) for git repos and collects commits by the configured git user for the target date. Uses `--no-merges`, normalizes timestamps to the local timezone, and queries a ±1 day window and then filters by local date.
 2. `scripts/fetch_prs.py` (US-1.2): `gh search prs`, authored + reviewed-by `@me`.
 3. `scripts/fetch_calendar.py` (US-1.3): Google Calendar API v3 via the official client libraries (`credentials.json` / `token.json`, both gitignored). google-auth always overrides `token_uri` with Google's real endpoint, so tests patch `google.oauth2.credentials._GOOGLE_OAUTH2_TOKEN_ENDPOINT` to the fake server.
-4. `scripts/prepare_payload.py` (US-2.1): buckets everything into time blocks. Calendar events become blocks, and commits outside events become focus blocks. With no events, it splits on a ≥90-minute inactivity gap. Each block gets a stable `block_id` (calendar `event_id`, or `<date>_block_N`).
+4. `scripts/prepare_payload.py` (US-2.1): buckets everything into time blocks. Calendar events become blocks, and commits outside events become focus blocks. Focus blocks split on a ≥90-minute inactivity gap, at the 12:00 and 13:00 lunch boundaries, and around events. Each block gets a stable `block_id`: the calendar `event_id`, or `<date>_focus_HHMM` anchored to the earliest commit's author time (`<date>_focus_<repo>-pr<N>` for PR-only blocks). Never use positional numbering: it shifts when activity lands between blocks and breaks the upsert.
 5. **[AI]** (US-2.2): returns only `{block_id: {"description": "<topics>. PRs: #a, #b"}}`. Scripts merge this back into the authoritative date, times, and sources.
 6. `scripts/save_entry.py` (US-3.1/3.2): idempotent upsert into `timesheet.jsonl` keyed on `(date, block_id)`, using an atomic temp-file rename. Then it re-renders `timesheet.md`. Re-runs must never duplicate blocks.
 7. `scripts/track_tokens.py` (US-5.1): parses Claude Code (`~/.claude/projects/...`) and Antigravity transcripts into `telemetry.csv`.
