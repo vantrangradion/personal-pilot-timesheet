@@ -25,6 +25,7 @@ The **Personal Pilot Timesheet Logger** automates daily engineering work logs by
 Rather than manual timesheet entry or unstructured AI summarization, the system enforces a strict **deterministic script vs. AI judgment boundary**:
 * **Scripts (`[Script]`):** Handle data retrieval, filtering, time-block mapping, persistence, and telemetry.
 * **AI (`[AI]`):** Confined exclusively to judgment tasks: grouping micro-tasks into coherent topics and writing executive-ready descriptions.
+* **Delivery Schedule:** Sprint 1 live demo delivered on Friday, 2026-10-09; final evaluation review with token telemetry optimization presentation delivered on Friday, 2026-10-30.
 
 ---
 
@@ -205,13 +206,14 @@ EPIC 5: Telemetry & Continuous Improvement
   - **Scenario 1: Segment daily events into chronological calendar and focus blocks**
     - **Given** daily calendar events, Git commits, and GitHub PR records from the harvester scripts
     - **When** `scripts/prepare_payload.py` is executed
-    - **Then** it creates chronological time blocks matching calendar events
+    - **Then** it normalizes all timestamps (Git commit ISO strings, PR update dates, and Google Calendar event datetimes) to the local workspace timezone
+    - **And** creates chronological time blocks matching calendar events
     - **And** maps commits and PRs into the time block containing their timestamp
     - **And** generates distinct focus blocks for commit activity occurring outside calendar events.
   - **Scenario 2: Segment activity into multiple work blocks when zero calendar events exist**
     - **Given** zero calendar events exist for the target date but commits or PRs are recorded
     - **When** `scripts/prepare_payload.py` processes the inputs
-    - **Then** it clusters commits and PRs into multiple distinct work blocks using an inactivity gap threshold of >= 90 minutes (with default boundary split at midday 12:30/13:30)
+    - **Then** it normalizes all timestamps to the local workspace timezone and clusters commits and PRs into multiple distinct work blocks using an inactivity gap threshold of >= 90 minutes (with default boundary split at midday 12:30/13:30)
     - **And** avoids collapsing the entire day into a single giant entry
     - **And** assigns a stable `block_id` (e.g. `<date>_block_1`, `<date>_block_2`) to each block
     - **And** maps commits and PRs into their corresponding time block.
