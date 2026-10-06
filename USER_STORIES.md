@@ -203,10 +203,12 @@ EPIC 5: Telemetry & Continuous Improvement
     - **Then** it creates chronological time blocks matching calendar events
     - **And** maps commits and PRs into the time block containing their timestamp
     - **And** generates distinct focus blocks for commit activity occurring outside calendar events.
-  - **Scenario 2: Fallback when zero calendar events exist**
-    - **Given** zero calendar events exist for the day but commits or PRs are recorded
+  - **Scenario 2: Segment activity into multiple work blocks when zero calendar events exist**
+    - **Given** zero calendar events exist for the target date but commits or PRs are recorded
     - **When** `scripts/prepare_payload.py` processes the inputs
-    - **Then** it produces a single default work block (`09:00 - 18:00`) containing all daily commits and PRs.
+    - **Then** it partitions the day's engineering activity into multiple distinct work blocks (e.g., morning and afternoon sessions partitioned by activity timestamps and inactivity gaps)
+    - **And** avoids collapsing the entire day into a single giant entry
+    - **And** maps commits and PRs into their corresponding time block.
   - **Scenario 3: Enforce compact input token budget for AI processing**
     - **Given** the structured time-block payload
     - **When** prepared for Claude's consumption
