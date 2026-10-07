@@ -62,18 +62,23 @@ summed over every run that day). Step 5 is the only step that needs the model to
 read or write data; the [Script] steps cost only their two command lines and
 short outputs.
 
-| Part of one run | Ceiling | How it is held |
-| --- | --- | --- |
-| Instructions (`prompts/synthesize_blocks.md`) | ~300 | Short prompt, checked by `tests/test_skill_package.py`. |
-| Payload (step 4 stdout) | < 500 | `prepare_payload.py` trims subjects and lists until its estimate fits, and warns if it cannot. |
-| Reply (step 5 JSON) | ~40 per block | 2–4 word title, 8–20 word description, JSON only. |
+| Part of one run | Ceiling | Measured (2026-10-07) | How it is held |
+| --- | --- | --- | --- |
+| Instructions (`prompts/synthesize_blocks.md`) | ~300 | 251 | Short prompt, checked by `tests/test_skill_package.py`. |
+| Payload (step 4 stdout) | < 500 | 212 (1 block) | `prepare_payload.py` trims subjects and lists until its estimate fits, and warns if it cannot. |
+| Reply (step 5 JSON) | ~50 per block | 52 (1 block) | 2–4 word title, 8–20 word description, JSON only. |
 
-A typical first run is about 600 tokens (2026-10-07: payload ~225, reply ~110).
+A typical first run is about 500 tokens. Measured on 2026-10-07 (Antigravity,
+one block, exact counts from the Gemini tokenizer via `track_tokens.py`):
+instructions 251 + payload 212 + reply 52 = 515.
 Re-runs send only new or changed blocks, so the rest of the day's budget goes to
 late work instead of describing the morning again; a re-run with nothing new has
 an empty payload and makes no [AI] call. Runner overhead (system prompt, tool
 definitions, reading this skill) is outside this budget; the per-day total from
 the session transcripts is tracked separately in `telemetry.csv` (US-5.1).
+Outside a run, `scripts/track_tokens.py` records each session's `total_tokens`
+next to its `ai_step_tokens` (this step alone) and flags any day whose
+`ai_step_tokens` exceed 1,200.
 
 Input minimization rules for step 5:
 
