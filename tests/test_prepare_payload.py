@@ -252,9 +252,11 @@ class TestMain(unittest.TestCase):
         self.assertEqual(code, 0)
         payload = json.loads(out)
         self.assertEqual([b["id"] for b in payload], ["e1", "2026-10-06_focus_1000"])
-        records = json.loads(blocks_out.read_text())
+        written = json.loads(blocks_out.read_text())
+        self.assertEqual(written["date"], "2026-10-06")
+        self.assertEqual(written["failed_sources"], [])
         self.assertEqual(
-            records[1],
+            written["blocks"][1],
             {
                 "block_id": "2026-10-06_focus_1000",
                 "kind": "focus",
@@ -264,6 +266,26 @@ class TestMain(unittest.TestCase):
                 "sources": {"calendar_event": None, "commits": ["a1"], "prs": [5]},
             },
         )
+
+    def test_failed_sources_recorded_in_blocks_out(self) -> None:
+        blocks_out = self.tmp / "blocks.json"
+        code, _, err = self._run([
+            "--date", "2026-10-06",
+            "--commits", self._write("c.json", [commit(10, 0, "a1")]),
+            "--failed-source", "prs",
+            "--failed-source", "calendar",
+            "--failed-source", "calendar",
+            "--blocks-out", str(blocks_out),
+        ])
+        self.assertEqual(code, 0)
+        written = json.loads(blocks_out.read_text())
+        self.assertEqual(written["failed_sources"], ["calendar", "prs"])
+        self.assertEqual([b["block_id"] for b in written["blocks"]], ["2026-10-06_focus_1000"])
+        self.assertIn("partial run", err)
+
+    def test_unknown_failed_source_rejected(self) -> None:
+        with self.assertRaises(SystemExit):
+            self._run(["--date", "2026-10-06", "--failed-source", "jira"])
 
     def test_no_inputs_outputs_empty_array(self) -> None:
         code, out, _ = self._run(["--date", "2026-10-06", "--commits", self._write("c.json", [])])

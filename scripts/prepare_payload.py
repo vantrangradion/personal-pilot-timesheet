@@ -17,7 +17,10 @@ time blocks for one date:
 Stdout receives the compact AI payload (a JSON array, `[]` when there is no
 data) trimmed to stay under the 500-token input budget. `--blocks-out` writes
 the authoritative block records (date, times, source audit trail) that later
-steps merge the AI descriptions into.
+steps merge the AI descriptions into, wrapped as `{"date": ..., "failed_sources":
+[...], "blocks": [...]}`. `failed_sources` lists the harvesters the workflow
+reported as failed (`--failed-source`), so save_entry.py knows the run is
+partial and must not prune.
 """
 
 from __future__ import annotations
@@ -34,6 +37,7 @@ GAP_THRESHOLD = timedelta(minutes=90)
 LUNCH_BOUNDARIES = (time(12, 0), time(13, 0))
 ROUNDING = timedelta(minutes=15)
 TOKEN_BUDGET = 500
+SOURCES = ("commits", "prs", "calendar")
 CHARS_PER_TOKEN = 3
 
 # Progressively tighter (max text length, max items per list) until the payload fits.
@@ -315,6 +319,15 @@ def block_record(block: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def blocks_file(target_date: date, blocks: List[Dict[str, Any]], failed_sources: Sequence[str]) -> Dict[str, Any]:
+    """Build the --blocks-out document: the run's date, failed harvesters, and block records."""
+    return {
+        "date": target_date.isoformat(),
+        "failed_sources": sorted(set(failed_sources)),
+        "blocks": [block_record(b) for b in blocks],
+    }
+
+
 def truncate(text: str, max_len: int) -> str:
     """Shorten text to max_len characters, marking the cut with '..'."""
     return text if len(text) <= max_len else text[: max_len - 2].rstrip() + ".."
@@ -409,6 +422,13 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         help="Write the authoritative block records (times and sources) to this JSON file.",
     )
     parser.add_argument(
+        "--failed-source",
+        action="append",
+        choices=SOURCES,
+        default=[],
+        help="A harvester that failed this run (repeatable); recorded in --blocks-out so nothing is pruned.",
+    )
+    parser.add_argument(
         "--budget",
         type=int,
         default=TOKEN_BUDGET,
@@ -449,13 +469,16 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.blocks_out:
         try:
             Path(args.blocks_out).write_text(
-                json.dumps([block_record(b) for b in blocks], indent=2) + "\n", encoding="utf-8"
+                json.dumps(blocks_file(target_date, blocks, args.failed_source), indent=2) + "\n",
+                encoding="utf-8",
             )
         except OSError as e:
             sys.stderr.write(f"Error: Cannot write blocks file {args.blocks_out}: {e}\n")
             return 1
 
     payload, tokens = build_ai_payload(blocks, budget=args.budget)
+    if args.failed_source:
+        sys.stderr.write(f"Warning: partial run, failed sources: {', '.join(sorted(set(args.failed_source)))}.\n")
     if args.verbose:
         sys.stderr.write(f"{len(blocks)} blocks, ~{tokens} tokens (budget {args.budget}).\n")
     if tokens >= args.budget:

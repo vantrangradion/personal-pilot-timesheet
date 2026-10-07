@@ -307,6 +307,12 @@ EPIC 5: Telemetry & Continuous Improvement
     - **When** `scripts/save_entry.py` persists that run's blocks, reading `failed_sources` from the blocks file
     - **Then** no blocks are removed for that date (an empty result from a failed fetch must not be read as "all meetings cancelled" or "no work done")
     - **And** the run is reported as partial on stderr.
+  - **Scenario 6: Never wipe a date from an empty run**
+    - **Given** `timesheet.jsonl` holds blocks for a date
+    - **And** a complete re-run (`failed_sources` is `[]`) produces zero blocks for that date (e.g. a misconfigured `--workspace-dir` or `--author` that returns `[]` without failing)
+    - **When** `scripts/save_entry.py` persists that run
+    - **Then** no blocks are removed for that date unless `--allow-empty` is passed
+    - **And** a warning on stderr names the rows kept and the `--allow-empty` override.
 
 ---
 

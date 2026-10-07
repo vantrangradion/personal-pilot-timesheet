@@ -21,8 +21,9 @@ python3 -m venv .venv && .venv/bin/pip install --only-binary=:all: -r requiremen
 .venv/bin/python scripts/fetch_commits.py --date 2026-10-06 -v   # run harvester (also: --workspace-dir, --repo, --author)
 .venv/bin/python scripts/fetch_calendar.py --auth         # one-time Google consent flow -> token.json
 .venv/bin/python scripts/fetch_calendar.py --date 2026-10-06 -v  # (also: --credentials, --token, --calendar-id)
-.venv/bin/python scripts/prepare_payload.py --date 2026-10-06 --commits c.json --prs p.json --calendar e.json --blocks-out blocks.json -v
+.venv/bin/python scripts/prepare_payload.py --date 2026-10-06 --commits c.json --prs p.json --calendar e.json --blocks-out blocks.json -v   # add --failed-source calendar (repeatable) per failed harvester
 .venv/bin/python scripts/merge_descriptions.py --blocks blocks.json --descriptions ai.json -v   # AI output via file or stdin
+.venv/bin/python scripts/merge_descriptions.py --blocks blocks.json --descriptions ai.json | .venv/bin/python scripts/save_entry.py --blocks blocks.json -v   # upsert into timesheet.jsonl (also: --timesheet, --allow-empty)
 ```
 
 ## Architecture
