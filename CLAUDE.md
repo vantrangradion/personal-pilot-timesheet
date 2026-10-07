@@ -25,6 +25,8 @@ python3 -m venv .venv && .venv/bin/pip install --only-binary=:all: -r requiremen
 .venv/bin/python scripts/merge_descriptions.py --blocks blocks.json --descriptions ai.json -v   # AI output via file or stdin
 .venv/bin/python scripts/merge_descriptions.py --blocks blocks.json --descriptions ai.json | .venv/bin/python scripts/save_entry.py --blocks blocks.json -v   # upsert into timesheet.jsonl, re-render timesheet.md (also: --timesheet, --markdown, --allow-empty)
 .venv/bin/python scripts/render_timesheet.py -v   # rebuild timesheet.md on its own (also: --timesheet, --out, '-' for stdout)
+timesheet-skill/run.sh prepare 2026-10-06          # skill steps 1-4: all harvesters + prepare_payload, prints the AI payload (files in tmp/timesheet/<date>/)
+timesheet-skill/run.sh save 2026-10-06 < ai.json   # skill steps 6-7: merge + save_entry (extra args go to save_entry.py)
 ```
 
 ## Architecture
