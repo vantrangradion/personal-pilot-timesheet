@@ -15,6 +15,7 @@ from unittest.mock import patch
 from scripts.merge_descriptions import (
     MergeError,
     clean_summary,
+    clean_title,
     main,
     merge,
     parse_ai_output,
@@ -43,11 +44,17 @@ class TestParseAiOutput(unittest.TestCase):
     """Scenario 2: the AI returns a block_id -> description mapping."""
 
     def test_object_values(self) -> None:
-        self.assertEqual(parse_ai_output('{"b1":{"description":"Did X."}}'), {"b1": "Did X."})
+        self.assertEqual(
+            parse_ai_output('{"b1":{"title":"Topic","description":"Did X."}}'),
+            {"b1": {"title": "Topic", "description": "Did X."}},
+        )
 
     def test_code_fence_and_plain_strings_tolerated(self) -> None:
         text = '```json\n{"b1": "Did X.", "b2": {"description": "Did Y."}}\n```'
-        self.assertEqual(parse_ai_output(text), {"b1": "Did X.", "b2": "Did Y."})
+        self.assertEqual(parse_ai_output(text), {"b1": {"description": "Did X."}, "b2": {"description": "Did Y."}})
+
+    def test_non_string_fields_dropped(self) -> None:
+        self.assertEqual(parse_ai_output('{"b1":{"title":7,"description":"Did X."}}'), {"b1": {"description": "Did X."}})
 
     def test_empty_output_is_no_descriptions(self) -> None:
         self.assertEqual(parse_ai_output("  \n"), {})
@@ -82,14 +89,27 @@ class TestCleanSummary(unittest.TestCase):
         self.assertLessEqual(len(clean_summary("word " * 200, [])), 240)
 
 
+class TestCleanTitle(unittest.TestCase):
+    """Titles are short display labels with no PR references."""
+
+    def test_strips_prs_quotes_and_punctuation(self) -> None:
+        self.assertEqual(clean_title(' "Calendar Harvester (#3)". PRs: #3 '), "Calendar Harvester")
+
+    def test_caps_length(self) -> None:
+        self.assertLessEqual(len(clean_title("Very Long Topic " * 10)), 48)
+
+
 class TestMerge(unittest.TestCase):
     """Scenario 2: descriptions merged into authoritative metadata."""
 
     def test_merges_description_and_keeps_authoritative_fields(self) -> None:
         blocks = [block("event_123", kind="calendar", event="Focus: Development", commits=["8f3b21a"], prs=[3])]
-        ai = {"event_123": "Implemented Google Calendar OAuth client and telemetry parser. PRs: #3"}
+        ai = {"event_123": {
+            "title": "Calendar & Telemetry",
+            "description": "Implemented Google Calendar OAuth client and telemetry parser. PRs: #3",
+        }}
 
-        entries, fallbacks, unknown = merge(blocks, ai)
+        entries, fallbacks, title_fallbacks, unknown = merge(blocks, ai)
 
         self.assertEqual(entries, [{
             "block_id": "event_123",
@@ -97,16 +117,17 @@ class TestMerge(unittest.TestCase):
             "date": "2026-10-06",
             "start_time": "10:00",
             "end_time": "11:30",
+            "title": "Calendar & Telemetry",
             "description": "Implemented Google Calendar OAuth client and telemetry parser. PRs: #3",
             "sources": {"calendar_event": "Focus: Development", "commits": ["8f3b21a"], "prs": [3]},
         }])
-        self.assertEqual((fallbacks, unknown), ([], []))
+        self.assertEqual((fallbacks, title_fallbacks, unknown), ([], [], []))
 
     def test_pr_list_rebuilt_from_sources(self) -> None:
         blocks = [block("b1", prs=[1182, 1174]), block("b2")]
-        ai = {"b1": "Shipped billing export. PRs: #1182", "b2": "Refactored config loader. PRs: #5"}
+        ai = {"b1": {"description": "Shipped billing export. PRs: #1182"}, "b2": {"description": "Refactored config loader. PRs: #5"}}
 
-        entries, _, _ = merge(blocks, ai)
+        entries, _, _, _ = merge(blocks, ai)
 
         self.assertEqual(entries[0]["description"], "Shipped billing export. PRs: #1174, #1182")
         self.assertEqual(entries[1]["description"], "Refactored config loader.")
@@ -117,16 +138,26 @@ class TestMerge(unittest.TestCase):
             block("2026-10-06_focus_1000", commits=["a1", "b2"], prs=[4]),
             block("2026-10-06_focus_pilot-pr9", prs=[9]),
         ]
-        entries, fallbacks, _ = merge(blocks, {"2026-10-06_focus_1000": "  "})
+        entries, fallbacks, title_fallbacks, _ = merge(blocks, {"2026-10-06_focus_1000": {"description": "  "}})
 
         self.assertEqual(
-            [e["description"] for e in entries],
-            ["Daily Standup.", "Focus work (2 commits). PRs: #4", "Pull request work. PRs: #9"],
+            [(e["title"], e["description"]) for e in entries],
+            [
+                ("Daily Standup", "Daily Standup."),
+                ("Focus work", "Focus work (2 commits). PRs: #4"),
+                ("Pull request work", "Pull request work. PRs: #9"),
+            ],
         )
-        self.assertEqual(fallbacks, ["standup", "2026-10-06_focus_1000", "2026-10-06_focus_pilot-pr9"])
+        ids = ["standup", "2026-10-06_focus_1000", "2026-10-06_focus_pilot-pr9"]
+        self.assertEqual((fallbacks, title_fallbacks), (ids, ids))
+
+    def test_title_and_description_fall_back_independently(self) -> None:
+        entries, fallbacks, title_fallbacks, _ = merge([block("b1")], {"b1": {"description": "Did X"}})
+        self.assertEqual((entries[0]["title"], entries[0]["description"]), ("Focus work", "Did X."))
+        self.assertEqual((fallbacks, title_fallbacks), ([], ["b1"]))
 
     def test_unknown_block_ids_ignored(self) -> None:
-        entries, _, unknown = merge([block("b1")], {"b1": "Did X", "invented": "Did Y"})
+        entries, _, _, unknown = merge([block("b1")], {"b1": {"description": "Did X"}, "invented": {"description": "Did Y"}})
         self.assertEqual([e["block_id"] for e in entries], ["b1"])
         self.assertEqual(unknown, ["invented"])
 
@@ -153,11 +184,14 @@ class TestMain(unittest.TestCase):
 
     def test_end_to_end_from_stdin(self) -> None:
         blocks = self.write("blocks.json", [block("b1", prs=[2]), block("b2", commits=["c3"])])
-        code, out, err = self.run_main(["--blocks", blocks], stdin='{"b1":{"description":"Wrote tests. PRs: #2"}}')
+        code, out, err = self.run_main(["--blocks", blocks], stdin='{"b1":{"title":"Test Suite","description":"Wrote tests. PRs: #2"}}')
 
         self.assertEqual(code, 0)
         entries = json.loads(out)
-        self.assertEqual([e["description"] for e in entries], ["Wrote tests. PRs: #2", "Focus work (1 commit)."])
+        self.assertEqual(
+            [(e["title"], e["description"]) for e in entries],
+            [("Test Suite", "Wrote tests. PRs: #2"), ("Focus work", "Focus work (1 commit).")],
+        )
         self.assertIn("fallback for: b2", err)
 
     def test_descriptions_file_and_wrapped_blocks_file(self) -> None:

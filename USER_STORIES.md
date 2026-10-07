@@ -244,7 +244,8 @@ EPIC 5: Telemetry & Continuous Improvement
   - **Scenario 2: Return synthesized block descriptions by block ID**
     - **Given** pre-segmented blocks each assigned a deterministic `block_id`
     - **When** the AI completes topic synthesis
-    - **Then** it returns a clean JSON mapping of `block_id` to `{ "description": "<summary>. PRs: #<ids>" }`
+    - **Then** it returns a clean JSON mapping of `block_id` to `{ "title": "<2-4 word topic>", "description": "<summary>. PRs: #<ids>" }`
+    - **And** the `title` is a human-readable display label for the block heading only; `block_id` remains the stable upsert key and is never derived from the title
     - **And** deterministic scripts merge these descriptions into authoritative metadata (`date`, `start_time`, `end_time`, `sources`) without relying on the AI to reproduce timestamps or audit records.
 
 ---
@@ -277,6 +278,7 @@ EPIC 5: Telemetry & Continuous Improvement
         "date": "2026-10-06",
         "start_time": "14:00",
         "end_time": "16:30",
+        "title": "Calendar & Telemetry",
         "description": "Implemented Google Calendar OAuth client and telemetry parser. PRs: #3",
         "sources": {
           "calendar_event": "Focus: Development",
@@ -323,6 +325,7 @@ EPIC 5: Telemetry & Continuous Improvement
     - **When** `scripts/save_entry.py` finishes persisting entries (or when render script is invoked)
     - **Then** `timesheet.md` is regenerated matching the Section 9 "Edit entry" UI specification
     - **And** entries are grouped chronologically by date under Markdown headers
+    - **And** each block heading shows the block's time range and its `title` (`### <start> - <end> | <title>`)
     - **And** each block clearly presents `Date`, `Start time`, `End time`, `Description` (including inline PRs), and `Sources`:
       ```markdown
       # Timesheet Log
