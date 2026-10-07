@@ -14,8 +14,11 @@ Guardrails applied to the AI output:
 - Fenced (```json) output is unwrapped; anything that is not a JSON object is
   rejected (exit 1) so the workflow can retry the AI step.
 - Block ids the scripts did not produce are dropped with a warning.
-- Blocks the AI skipped (or described with an empty string) get a
-  deterministic fallback title and description from their sources.
+- Blocks the AI skipped (or described with an empty string) keep the saved
+  title and description that prepare_payload.py attached as `reuse` (the
+  block is unchanged since it was logged and was left out of the AI payload),
+  or else get a deterministic fallback title and description from their
+  sources.
 - Titles are display labels only (the `timesheet.md` heading); `block_id`
   stays the upsert key. They are cut to one short line with no PR refs.
 - The trailing `PRs:` list is rebuilt from the block's `sources.prs`, and
@@ -179,11 +182,12 @@ def merge(
         sources = block.get("sources") or {}
         prs = sorted({int(n) for n in sources.get("prs") or []})
         ai = descriptions.get(block["block_id"], {})
-        summary = clean_summary(ai.get("description", ""), prs)
+        reuse = block.get("reuse") or {}
+        summary = clean_summary(ai.get("description", ""), prs) or clean_summary(reuse.get("description", ""), prs)
         if not summary:
             summary = fallback_summary(block)
             fallbacks.append(block["block_id"])
-        title = clean_title(ai.get("title", ""))
+        title = clean_title(ai.get("title", "")) or clean_title(reuse.get("title", ""))
         if not title:
             title = fallback_title(block)
             title_fallbacks.append(block["block_id"])
@@ -255,7 +259,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     if title_fallbacks:
         sys.stderr.write(f"Warning: no AI title, used fallback for: {', '.join(title_fallbacks)}\n")
     if args.verbose:
-        sys.stderr.write(f"Merged {len(entries) - len(fallbacks)}/{len(entries)} AI descriptions.\n")
+        reused = sum(1 for b in blocks if b.get("reuse") and b["block_id"] not in descriptions)
+        sys.stderr.write(
+            f"Merged {len(entries) - len(fallbacks) - reused}/{len(entries)} AI descriptions, {reused} reused.\n"
+        )
 
     sys.stdout.write(json.dumps(entries, indent=2, ensure_ascii=False) + "\n")
     return 0

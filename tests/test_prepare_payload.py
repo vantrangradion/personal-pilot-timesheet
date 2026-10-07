@@ -283,6 +283,54 @@ class TestMain(unittest.TestCase):
         self.assertEqual([b["block_id"] for b in written["blocks"]], ["2026-10-06_focus_1000"])
         self.assertIn("partial run", err)
 
+    def test_unchanged_blocks_reuse_saved_text_and_skip_ai(self) -> None:
+        saved = [
+            {"block_id": "e1", "date": "2026-10-06", "title": "Standup", "description": "Daily sync.",
+             "sources": {"calendar_event": "Standup", "commits": [], "prs": []}},
+            {"block_id": "2026-10-06_focus_1000", "date": "2026-10-06", "title": "Harvester",
+             "description": "Built it.", "sources": {"calendar_event": None, "commits": ["a1"], "prs": []}},
+            {"block_id": "e1", "date": "2026-10-05", "title": "Other day", "description": "Ignored.",
+             "sources": {"calendar_event": "Standup", "commits": [], "prs": []}},
+        ]
+        timesheet = self.tmp / "timesheet.jsonl"
+        timesheet.write_text("\n".join(json.dumps(r) for r in saved) + "\n")
+        blocks_out = self.tmp / "blocks.json"
+        code, out, err = self._run([
+            "--date", "2026-10-06",
+            "--commits", self._write("c.json", [commit(10, 0, "a1"), commit(10, 20, "b2")]),
+            "--calendar", self._write("e.json", [event("e1", "Standup", (9, 30), (9, 45))]),
+            "--blocks-out", str(blocks_out),
+            "--timesheet", str(timesheet),
+            "-v",
+        ])
+        self.assertEqual(code, 0, err)
+        # The focus block gained commit b2, so only it goes to the AI again.
+        self.assertEqual([b["id"] for b in json.loads(out)], ["2026-10-06_focus_1000"])
+        written = {b["block_id"]: b for b in json.loads(blocks_out.read_text())["blocks"]}
+        self.assertEqual(written["e1"]["reuse"], {"title": "Standup", "description": "Daily sync."})
+        self.assertNotIn("reuse", written["2026-10-06_focus_1000"])
+        self.assertIn("1 unchanged", err)
+
+    def test_all_blocks_unchanged_gives_empty_payload(self) -> None:
+        timesheet = self.tmp / "timesheet.jsonl"
+        timesheet.write_text(json.dumps({
+            "block_id": "2026-10-06_focus_1000", "date": "2026-10-06", "title": "Harvester",
+            "description": "Built it.", "sources": {"calendar_event": None, "commits": ["a1"], "prs": [5]},
+        }) + "\n")
+        argv = ["--date", "2026-10-06", "--commits", self._write("c.json", [commit(10, 0, "a1")]),
+                "--prs", self._write("p.json", [pr(10, 30, 5, status="merged")])]
+        code, out, _ = self._run(argv + ["--timesheet", str(timesheet)])
+        self.assertEqual((code, json.loads(out)), (0, []))
+        code, out, _ = self._run(argv + ["--timesheet", str(self.tmp / "missing.jsonl")])
+        self.assertEqual((code, len(json.loads(out))), (0, 1))
+
+    def test_malformed_timesheet_fails(self) -> None:
+        timesheet = self.tmp / "timesheet.jsonl"
+        timesheet.write_text("{not json\n")
+        code, out, err = self._run(["--date", "2026-10-06", "--timesheet", str(timesheet)])
+        self.assertEqual((code, out), (1, ""))
+        self.assertIn("line 1", err)
+
     def test_unknown_failed_source_rejected(self) -> None:
         with self.assertRaises(SystemExit):
             self._run(["--date", "2026-10-06", "--failed-source", "jira"])

@@ -22,7 +22,8 @@ so a run is two tool calls around the [AI] step. Intermediate files go to
    marks that source failed, so the run continues as a partial run.
 4. **[Script]** Slice into blocks: `scripts/prepare_payload.py` writes the
    authoritative blocks (times, sources, `failed_sources`) to `blocks.json` and
-   prints the compact AI payload.
+   prints the compact AI payload. Blocks already logged with unchanged sources
+   are left out of the payload and keep their saved text.
 
    ```bash
    timesheet-skill/run.sh prepare DATE
@@ -33,7 +34,8 @@ so a run is two tool calls around the [AI] step. Intermediate files go to
 5. **[AI]** Summarize each block as a `title` and a `description`, following
    [prompts/synthesize_blocks.md](prompts/synthesize_blocks.md). The input is only
    the payload printed by step 4. Do not open the harvester JSON, `blocks.json`,
-   `timesheet.jsonl`, git logs, or diffs. If the payload is `[]`, the reply is `{}`.
+   `timesheet.jsonl`, git logs, or diffs. If the payload is `[]`, skip the
+   summary: the reply is `{}`.
 6. **[Script]** Merge: `scripts/merge_descriptions.py` joins the reply with the
    authoritative blocks, rebuilds each `PRs:` list from the block's sources, and
    fills a fallback for any block the reply skipped.
@@ -53,8 +55,48 @@ so a run is two tool calls around the [AI] step. Intermediate files go to
    `unchanged`, `removed`, and `partial` with its `failed_sources`) and any
    warnings. Do not paste the timesheet back into the conversation.
 
+## Token budget
+
+**Target: at most 1,200 tokens per day** (input plus output of the [AI] step,
+summed over every run that day). Step 5 is the only step that needs the model to
+read or write data; the [Script] steps cost only their two command lines and
+short outputs.
+
+| Part of one run | Ceiling | How it is held |
+| --- | --- | --- |
+| Instructions (`prompts/synthesize_blocks.md`) | ~300 | Short prompt, checked by `tests/test_skill_package.py`. |
+| Payload (step 4 stdout) | < 500 | `prepare_payload.py` trims subjects and lists until its estimate fits, and warns if it cannot. |
+| Reply (step 5 JSON) | ~40 per block | 2–4 word title, 8–20 word description, JSON only. |
+
+A typical first run is about 600 tokens (2026-10-07: payload ~225, reply ~110).
+Re-runs send only new or changed blocks, so the rest of the day's budget goes to
+late work instead of describing the morning again; a re-run with nothing new has
+an empty payload and makes no [AI] call. Runner overhead (system prompt, tool
+definitions, reading this skill) is outside this budget; the per-day total from
+the session transcripts is tracked separately in `telemetry.csv` (US-5.1).
+
+Input minimization rules for step 5:
+
+- The only input is the payload printed by step 4: block id, time range, event
+  title, first-line commit subjects grouped by repo, and `#N title (status)` PR
+  lines.
+- Never put the full `git log`, commit bodies, diffs, or file lists in the
+  agent's context.
+- Never put the raw calendar JSON in the context: no attendees, descriptions,
+  links, or event metadata beyond the title.
+- Never read `blocks.json`, the harvester JSON files, `timesheet.jsonl`,
+  `timesheet.md`, or earlier days' logs; the scripts carry times and sources
+  around the [AI] step.
+- Do not re-describe blocks that are already logged; `prepare_payload.py`
+  leaves them out, and `--refresh` (below) is the only way to send them again.
+- Do not paste script output back into the conversation beyond step 8's summary.
+
 ## Overrides
 
 Extra arguments after `DATE` in step 7 go to `save_entry.py`. Use
 `--allow-empty` only when a complete run with no activity should clear that
 date's previously logged blocks.
+
+`timesheet-skill/run.sh prepare DATE --refresh` sends every block to step 5
+again, even unchanged ones. Use it only when asked to rewrite a day's
+descriptions; it spends a full run's tokens.

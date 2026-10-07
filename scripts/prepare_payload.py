@@ -21,6 +21,12 @@ steps merge the AI descriptions into, wrapped as `{"date": ..., "failed_sources"
 [...], "blocks": [...]}`. `failed_sources` lists the harvesters the workflow
 reported as failed (`--failed-source`), so save_entry.py knows the run is
 partial and must not prune.
+
+With `--timesheet`, a re-run reuses the saved title and description of every
+block whose sources (event, commits, PRs) are unchanged since it was logged:
+the block is marked `reuse` in `--blocks-out` and left out of the AI payload,
+so each block is described about once per day however often the workflow runs
+(US-4.2 daily token budget).
 """
 
 from __future__ import annotations
@@ -76,6 +82,56 @@ def load_json_array(path: Optional[str]) -> List[Dict[str, Any]]:
     if not isinstance(data, list):
         raise PayloadError(f"Input file {path} must contain a JSON array.")
     return [item for item in data if isinstance(item, dict)]
+
+
+def load_saved(path: Optional[str], target_date: date) -> Dict[str, Dict[str, Any]]:
+    """
+    Load the target date's rows from timesheet.jsonl, keyed by block_id. A
+    missing flag or file means nothing was logged yet.
+    """
+    if path is None or not Path(path).exists():
+        return {}
+    saved: Dict[str, Dict[str, Any]] = {}
+    try:
+        lines = Path(path).read_text(encoding="utf-8").splitlines()
+    except OSError as e:
+        raise PayloadError(f"Cannot read timesheet {path}: {e}") from e
+    for number, line in enumerate(lines, start=1):
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError as e:
+            raise PayloadError(f"Timesheet {path} line {number} is not valid JSON: {e}") from e
+        if isinstance(row, dict) and row.get("date") == target_date.isoformat() and row.get("block_id"):
+            saved[str(row["block_id"])] = row
+    return saved
+
+
+def same_sources(a: Dict[str, Any], b: Dict[str, Any]) -> bool:
+    """True when two source audit trails name the same event, commits, and PRs (order ignored)."""
+    return (
+        a.get("calendar_event") == b.get("calendar_event")
+        and sorted(a.get("commits") or []) == sorted(b.get("commits") or [])
+        and sorted(a.get("prs") or []) == sorted(b.get("prs") or [])
+    )
+
+
+def mark_reusable(blocks: List[Dict[str, Any]], saved: Dict[str, Dict[str, Any]]) -> List[str]:
+    """
+    Attach the saved title and description (`reuse`) to every block whose
+    sources match its logged row, so the AI does not describe it again.
+    Returns the reused block ids.
+    """
+    reused: List[str] = []
+    for block in blocks:
+        row = saved.get(block["block_id"])
+        if not row or not row.get("title") or not row.get("description"):
+            continue
+        if same_sources(block["sources"], row.get("sources") or {}):
+            block["reuse"] = {"title": row["title"], "description": row["description"]}
+            reused.append(block["block_id"])
+    return reused
 
 
 def first_line(text: str) -> str:
@@ -309,7 +365,7 @@ def build_blocks(
 
 def block_record(block: Dict[str, Any]) -> Dict[str, Any]:
     """Project a block to its authoritative, JSON-serializable record (for --blocks-out)."""
-    return {
+    record = {
         "block_id": block["block_id"],
         "kind": block["kind"],
         "date": block["date"],
@@ -317,6 +373,9 @@ def block_record(block: Dict[str, Any]) -> Dict[str, Any]:
         "end_time": block["end_time"],
         "sources": block["sources"],
     }
+    if "reuse" in block:
+        record["reuse"] = block["reuse"]
+    return record
 
 
 def blocks_file(target_date: date, blocks: List[Dict[str, Any]], failed_sources: Sequence[str]) -> Dict[str, Any]:
@@ -429,6 +488,12 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         help="A harvester that failed this run (repeatable); recorded in --blocks-out so nothing is pruned.",
     )
     parser.add_argument(
+        "--timesheet",
+        type=str,
+        default=None,
+        help="Saved timesheet.jsonl; blocks whose sources are unchanged reuse their saved text and skip the AI.",
+    )
+    parser.add_argument(
         "--budget",
         type=int,
         default=TOKEN_BUDGET,
@@ -460,11 +525,13 @@ def main(argv: Optional[List[str]] = None) -> int:
         commits = load_json_array(args.commits)
         prs = load_json_array(args.prs)
         events = load_json_array(args.calendar)
+        saved = load_saved(args.timesheet, target_date)
     except PayloadError as e:
         sys.stderr.write(f"Error: {e}\n")
         return 1
 
     blocks = build_blocks(target_date, events, commits, prs)
+    reused = mark_reusable(blocks, saved)
 
     if args.blocks_out:
         try:
@@ -476,11 +543,13 @@ def main(argv: Optional[List[str]] = None) -> int:
             sys.stderr.write(f"Error: Cannot write blocks file {args.blocks_out}: {e}\n")
             return 1
 
-    payload, tokens = build_ai_payload(blocks, budget=args.budget)
+    payload, tokens = build_ai_payload([b for b in blocks if "reuse" not in b], budget=args.budget)
     if args.failed_source:
         sys.stderr.write(f"Warning: partial run, failed sources: {', '.join(sorted(set(args.failed_source)))}.\n")
     if args.verbose:
-        sys.stderr.write(f"{len(blocks)} blocks, ~{tokens} tokens (budget {args.budget}).\n")
+        sys.stderr.write(
+            f"{len(blocks)} blocks ({len(reused)} unchanged, reused), ~{tokens} tokens (budget {args.budget}).\n"
+        )
     if tokens >= args.budget:
         sys.stderr.write(f"Warning: AI payload is ~{tokens} tokens, over the {args.budget}-token budget.\n")
 

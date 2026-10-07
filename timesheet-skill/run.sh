@@ -2,11 +2,13 @@
 # Runs the deterministic [Script] steps of workflow.md, grouped so a runner needs
 # only two tool calls around the single [AI] step.
 #
-#   run.sh prepare [DATE]                     steps 1-4: harvest, slice, print the AI payload
+#   run.sh prepare [DATE] [--refresh]         steps 1-4: harvest, slice, print the AI payload
 #   run.sh save [DATE] [save_entry.py args]   steps 6-7: merge the AI JSON from stdin, upsert, render
 #
 # DATE is YYYY-MM-DD (default: today). Intermediate files go to
-# $TIMESHEET_RUN_ROOT/<DATE>/ (default: tmp/timesheet/, gitignored).
+# $TIMESHEET_RUN_ROOT/<DATE>/ (default: tmp/timesheet/, gitignored). prepare
+# leaves blocks already logged with unchanged sources out of the AI payload
+# (their saved text is reused); --refresh sends every block to the AI again.
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -15,7 +17,7 @@ PY=.venv/bin/python
 [ -x "$PY" ] || PY=python3
 
 usage() {
-    echo "Usage: $0 prepare [YYYY-MM-DD] | save [YYYY-MM-DD] [save_entry.py args] < ai.json" >&2
+    echo "Usage: $0 prepare [YYYY-MM-DD] [--refresh] | save [YYYY-MM-DD] [save_entry.py args] < ai.json" >&2
     exit 2
 }
 
@@ -39,6 +41,8 @@ harvest() {
 }
 
 prepare() {
+    local saved=(--timesheet timesheet.jsonl)
+    [ "${1:-}" = --refresh ] && saved=()
     mkdir -p "$RUN" || exit 1
     harvest commits &
     harvest prs &
@@ -57,7 +61,7 @@ prepare() {
     # Step 4: slice into blocks; stdout is the compact AI payload.
     "$PY" scripts/prepare_payload.py --date "$DATE" \
         --commits "$RUN/commits.json" --prs "$RUN/prs.json" --calendar "$RUN/calendar.json" \
-        --blocks-out "$RUN/blocks.json" ${failed[@]+"${failed[@]}"}
+        --blocks-out "$RUN/blocks.json" ${failed[@]+"${failed[@]}"} ${saved[@]+"${saved[@]}"}
 }
 
 save() {
@@ -73,7 +77,7 @@ save() {
 }
 
 case "$stage" in
-    prepare) [ $# -eq 0 ] || usage; prepare ;;
+    prepare) [ $# -eq 0 ] || { [ $# -eq 1 ] && [ "$1" = --refresh ]; } || usage; prepare "$@" ;;
     save) save "$@" ;;
     *) usage ;;
 esac

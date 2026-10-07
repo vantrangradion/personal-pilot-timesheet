@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
 Tests for the timesheet-skill/ package (US-4.1): SKILL.md metadata, the
-[Script]/[AI] tagging of workflow.md, and the run.sh wrapper.
+[Script]/[AI] tagging of workflow.md, and the run.sh wrapper; and the daily
+token budget declared in workflow.md (US-4.2).
 """
 
 import json
@@ -13,6 +14,8 @@ import subprocess
 import sys
 import tempfile
 import unittest
+
+from scripts.prepare_payload import TOKEN_BUDGET, estimate_tokens
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SKILL_DIR = REPO_ROOT / "timesheet-skill"
@@ -90,6 +93,34 @@ class TestWorkflowTags(unittest.TestCase):
         self.assertTrue((SKILL_DIR / "prompts" / "synthesize_blocks.md").is_file())
 
 
+DAILY_BUDGET = 1200
+PROMPT_BUDGET = 300
+REPLY_TOKENS_PER_BLOCK = 40
+
+
+class TestTokenBudget(unittest.TestCase):
+    """workflow.md declares the daily ceiling and the input minimization rules (US-4.2)."""
+
+    def setUp(self) -> None:
+        text = (SKILL_DIR / "workflow.md").read_text(encoding="utf-8")
+        self.budget = text.split("## Token budget", 1)[1].split("\n## ", 1)[0]
+
+    def test_daily_ceiling_declared(self) -> None:
+        self.assertIn(f"{DAILY_BUDGET:,} tokens per day", self.budget)
+        self.assertIn(f"< {TOKEN_BUDGET}", self.budget)
+
+    def test_input_minimization_rules(self) -> None:
+        rules = " ".join(self.budget.lower().split())
+        for banned in ("full `git log`", "diffs", "raw calendar json", "attendees", "earlier days"):
+            self.assertIn(banned, rules)
+
+    def test_one_run_fits_daily_ceiling(self) -> None:
+        prompt = (SKILL_DIR / "prompts" / "synthesize_blocks.md").read_text(encoding="utf-8")
+        self.assertLessEqual(estimate_tokens(prompt), PROMPT_BUDGET)
+        # A busy day of six blocks: prompt + the payload cap + the reply.
+        self.assertLessEqual(PROMPT_BUDGET + TOKEN_BUDGET + 6 * REPLY_TOKENS_PER_BLOCK, DAILY_BUDGET)
+
+
 STUB_OK = """import json, sys
 print(json.dumps({payload}))
 """
@@ -157,6 +188,13 @@ class TestRunScript(unittest.TestCase):
         rows = (self.root / "timesheet.jsonl").read_text().splitlines()
         self.assertEqual(len(rows), 1)
 
+        # A re-run with no new activity sends nothing to the AI and keeps the saved text.
+        rerun = self.run_sh("prepare", DATE)
+        self.assertEqual(json.loads(rerun.stdout), [])
+        kept = self.run_sh("save", DATE, stdin="{}")
+        self.assertEqual(json.loads(kept.stdout)["unchanged"], [block_id])
+        self.assertEqual(len(json.loads(self.run_sh("prepare", DATE, "--refresh").stdout)), 1)
+
     def test_save_rejects_non_json(self) -> None:
         self.assertEqual(self.run_sh("prepare", DATE).returncode, 0)
         result = self.run_sh("save", DATE, stdin="Sure! Here are the descriptions.")
@@ -170,6 +208,7 @@ class TestRunScript(unittest.TestCase):
 
     def test_unknown_stage(self) -> None:
         self.assertEqual(self.run_sh("bogus").returncode, 2)
+        self.assertEqual(self.run_sh("prepare", DATE, "--bogus").returncode, 2)
 
 
 if __name__ == "__main__":

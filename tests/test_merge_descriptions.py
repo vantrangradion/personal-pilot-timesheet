@@ -156,6 +156,16 @@ class TestMerge(unittest.TestCase):
         self.assertEqual((entries[0]["title"], entries[0]["description"]), ("Focus work", "Did X."))
         self.assertEqual((fallbacks, title_fallbacks), ([], ["b1"]))
 
+    def test_unchanged_block_reuses_saved_text(self) -> None:
+        reused = {**block("b1", prs=[7]), "reuse": {"title": "Billing Export", "description": "Shipped export. PRs: #7"}}
+        entries, fallbacks, title_fallbacks, _ = merge([reused], {})
+        self.assertEqual((entries[0]["title"], entries[0]["description"]), ("Billing Export", "Shipped export. PRs: #7"))
+        self.assertNotIn("reuse", entries[0])
+        self.assertEqual((fallbacks, title_fallbacks), ([], []))
+
+        entries, _, _, _ = merge([reused], {"b1": {"title": "New", "description": "Rewrote export"}})
+        self.assertEqual((entries[0]["title"], entries[0]["description"]), ("New", "Rewrote export. PRs: #7"))
+
     def test_unknown_block_ids_ignored(self) -> None:
         entries, _, _, unknown = merge([block("b1")], {"b1": {"description": "Did X"}, "invented": {"description": "Did Y"}})
         self.assertEqual([e["block_id"] for e in entries], ["b1"])
