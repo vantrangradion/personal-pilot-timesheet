@@ -20,7 +20,9 @@ output of merge_descriptions.py) into `timesheet.jsonl`, keyed on
   without failing, and that must not silently wipe a logged day.
 
 The file is rewritten atomically (temporary file in the same directory, then
-rename), and a malformed existing file aborts the run without writing.
+rename), and a malformed existing file aborts the run without writing. The
+Markdown view (`timesheet.md` by default) is then re-rendered from the saved
+rows by render_timesheet.py (US-3.2).
 
 Stdout receives a JSON summary of the keys inserted, updated, unchanged, and
 removed.
@@ -31,11 +33,14 @@ from __future__ import annotations
 import argparse
 from datetime import datetime
 import json
-import os
 from pathlib import Path
 import sys
-import tempfile
 from typing import Any, Dict, List, Optional, Sequence, Tuple
+
+try:
+    from scripts.render_timesheet import default_markdown_path, write_markdown, write_text_atomic
+except ImportError:  # run as `python scripts/save_entry.py`
+    from render_timesheet import default_markdown_path, write_markdown, write_text_atomic
 
 DEFAULT_TIMESHEET = "timesheet.jsonl"
 PRUNABLE_KINDS = ("calendar", "focus")
@@ -181,18 +186,7 @@ def upsert(
 
 def write_atomic(path: Path, rows: List[Dict[str, Any]]) -> None:
     """Write rows as JSON Lines via a temporary file in the same directory, then rename over path."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=str(path.parent))
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            for row in rows:
-                f.write(json.dumps(row, ensure_ascii=False) + "\n")
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(tmp_name, path)
-    except BaseException:
-        Path(tmp_name).unlink(missing_ok=True)
-        raise
+    write_text_atomic(path, "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows))
 
 
 def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
@@ -217,6 +211,12 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         type=str,
         default=DEFAULT_TIMESHEET,
         help=f"Timesheet JSON Lines file to update (default: {DEFAULT_TIMESHEET}).",
+    )
+    parser.add_argument(
+        "--markdown",
+        type=str,
+        default=None,
+        help="Markdown view to re-render after saving (default: --timesheet with a .md suffix).",
     )
     parser.add_argument(
         "--allow-empty",
@@ -263,6 +263,12 @@ def main(argv: Optional[List[str]] = None) -> int:
         except OSError as e:
             sys.stderr.write(f"Error: Cannot write timesheet {timesheet}: {e}\n")
             return 1
+    markdown = Path(args.markdown) if args.markdown else default_markdown_path(timesheet)
+    try:
+        rendered = write_markdown(markdown, new_rows)
+    except OSError as e:
+        sys.stderr.write(f"Error: Saved {timesheet} but cannot write {markdown}: {e}\n")
+        return 1
 
     if partial:
         sys.stderr.write(
@@ -278,6 +284,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.verbose:
         counts = ", ".join(f"{len(ids)} {action}" for action, ids in summary.items())
         sys.stderr.write(f"{timesheet}: {counts}.\n")
+        sys.stderr.write(f"{markdown}: {'rendered' if rendered else 'unchanged'}.\n")
 
     result = {"date": run_date, "partial": partial, "failed_sources": failed_sources, **summary}
     sys.stdout.write(json.dumps(result, indent=2) + "\n")
