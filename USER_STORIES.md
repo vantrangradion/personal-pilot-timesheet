@@ -429,6 +429,11 @@ EPIC 5: Telemetry & Continuous Improvement
     - **Given** multiple timesheet runs recorded on the same date across one or both runners
     - **When** daily summary telemetry is generated
     - **Then** `scripts/track_tokens.py` sums all session token metrics into an aggregated daily total.
+  - **Scenario 4: Report the [AI] step separately from runner overhead**
+    - **Given** a session transcript containing one or more timesheet runs (`timesheet-skill/run.sh prepare` and `run.sh save` tool calls)
+    - **When** `scripts/track_tokens.py` records that session
+    - **Then** the row also contains `ai_step_tokens`: the [AI] step's input and output only (the synthesis prompt, the payload printed by `run.sh prepare`, and the JSON reply passed to `run.sh save`), excluding runner overhead such as the system prompt, tool definitions, and skill files
+    - **And** the aggregated daily total reports `ai_step_tokens` next to `total_tokens` and flags any date where `ai_step_tokens` exceeds the 1,200-token ceiling declared in `workflow.md` (US-4.2).
 
 ---
 
