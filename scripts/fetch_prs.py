@@ -11,6 +11,7 @@ outputs a normalized JSON array to stdout.
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta
 import json
 import subprocess
@@ -133,14 +134,20 @@ def fetch_prs(target_date: date, limit: int = DEFAULT_LIMIT, verbose: bool = Fal
     """
     Harvest authored and reviewed PRs updated on target_date (local timezone).
 
-    A PR found by both queries is kept once, with the authored status taking
-    precedence. Results are sorted chronologically by updated_at.
+    The two searches are network-bound, so they run concurrently. A PR found
+    by both queries is kept once, with the authored status taking precedence.
+    Results are sorted chronologically by updated_at.
     """
     check_gh_auth()
 
+    roles = (("--author=@me", True), ("--reviewed-by=@me", False))
+    with ThreadPoolExecutor(max_workers=len(roles)) as pool:
+        futures = [pool.submit(search_prs, qualifier, target_date, limit, verbose) for qualifier, _ in roles]
+        results = [future.result() for future in futures]
+
     by_url: Dict[str, Dict[str, Any]] = {}
-    for qualifier, authored in (("--author=@me", True), ("--reviewed-by=@me", False)):
-        for record in search_prs(qualifier, target_date, limit=limit, verbose=verbose):
+    for (_, authored), records in zip(roles, results):
+        for record in records:
             pr = normalize_pr(record, authored)
             if pr is None:
                 if verbose:

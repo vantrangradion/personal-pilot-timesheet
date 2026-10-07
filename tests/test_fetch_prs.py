@@ -138,9 +138,12 @@ class TestFetchPrs(unittest.TestCase):
         )
 
         search_calls = [c for c in self._gh_calls() if c[:2] == ["search", "prs"]]
+        # The searches run concurrently, so their order in the log is not fixed.
         self.assertEqual(len(search_calls), 2)
-        self.assertIn("--author=@me", search_calls[0])
-        self.assertIn("--reviewed-by=@me", search_calls[1])
+        self.assertEqual(
+            sorted(q for call in search_calls for q in call if q.endswith("=@me")),
+            ["--author=@me", "--reviewed-by=@me"],
+        )
         for call in search_calls:
             self.assertIn("--json=repository,number,title,state,url,updatedAt", call)
             self.assertIn("--updated=2026-10-05..2026-10-07", call)
