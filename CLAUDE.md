@@ -28,6 +28,7 @@ python3 -m venv .venv && .venv/bin/pip install --only-binary=:all: -r requiremen
 timesheet-skill/run.sh prepare 2026-10-06          # skill steps 1-4: all harvesters + prepare_payload, prints the AI payload (files in tmp/timesheet/<date>/); --refresh re-sends logged blocks
 timesheet-skill/run.sh save 2026-10-06 < ai.json   # skill steps 6-7: merge + save_entry (extra args go to save_entry.py)
 .venv/bin/python scripts/track_tokens.py -v           # upsert per-session token usage into telemetry.csv, print daily totals; keys from ANTHROPIC_API_KEY / GEMINI_API_KEY or Keychain items anthropic-api-key / gemini-api-key (also: transcript paths, --runner, --all-sessions, --date, --csv, --exclude/--include SESSION_ID, --estimate, --gemini-model)
+scripts/install_telemetry_job.sh [HH:MM]          # launchd job: run track_tokens.py daily (default 23:30), log in ~/Library/Logs/personal-pilot-timesheet-telemetry.log (also: --print, --uninstall)
 ```
 
 ## Architecture

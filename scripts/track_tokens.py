@@ -868,6 +868,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             )
     if args.verbose:
         sys.stderr.write(
+            f"{datetime.now().astimezone().replace(microsecond=0).isoformat()} "
             f"Recorded {len(recorded)} session row(s) into {csv_path} ({len(rows)} total); "
             f"{len(excluded)} session(s) excluded via {exclude_path}.\n"
         )
