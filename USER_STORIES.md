@@ -271,10 +271,11 @@ EPIC 5: Telemetry & Continuous Improvement
   - **Scenario 2: Append new distinct time block**
     - **Given** an entry with a new `block_id` not present in `timesheet.jsonl` for that date
     - **When** `scripts/save_entry.py` is executed
-    - **Then** the record is appended as a new line in `timesheet.jsonl` preserving all source audit trails:
+    - **Then** the record is appended as a new line in `timesheet.jsonl` preserving all source audit trails, with `kind` (`calendar` or `focus`) marking which blocks a later run may prune:
       ```json
       {
         "block_id": "event_123",
+        "kind": "calendar",
         "date": "2026-10-06",
         "start_time": "14:00",
         "end_time": "16:30",
@@ -457,8 +458,6 @@ EPIC 5: Telemetry & Continuous Improvement
    - Secrets (`credentials.json`, `token.json`, personal access tokens) must be included in `.gitignore` and never committed.
 3. **Execution Latency:**
    - End-to-end execution of all `[Script]` steps must complete within $< 5$ seconds on local developer hardware.
-4. **Git Discipline:**
-   - Every feature/story branch follows the convention: `feat/<story-id>-<slug>` (e.g., `feat/us-1.1-git-commits`).
 
 ---
 
@@ -473,4 +472,4 @@ EPIC 5: Telemetry & Continuous Improvement
 - [ ] Safe re-runs: re-executing updates existing blocks without duplicating entries.
 - [ ] `scripts/track_tokens.py` captures daily token counts into `telemetry.csv` for both Antigravity and Claude Code sessions.
 - [ ] `IMPROVEMENT.md` records daily review notes and optimizations.
-- [ ] Git commit history reflects incremental, disciplined PR workflow without direct commits to `main`.
+- [ ] Git commit history is incremental, one story at a time, with conventional commit messages that cite the story ID (e.g., `feat(ingest): ... (US-1.1)`).
