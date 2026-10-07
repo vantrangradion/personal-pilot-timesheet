@@ -29,6 +29,7 @@ def row(
     calendar_event: Optional[str] = None,
     commits: Optional[List[str]] = None,
     prs: Optional[List[int]] = None,
+    repos: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """Build a timesheet.jsonl row."""
     return {
@@ -39,7 +40,7 @@ def row(
         "end_time": end,
         "title": title,
         "description": description,
-        "sources": {"calendar_event": calendar_event, "commits": commits or [], "prs": prs or []},
+        "sources": {"calendar_event": calendar_event, "commits": commits or [], "prs": prs or [], "repos": repos or []},
         "created_at": f"{date}T16:35:00+07:00",
     }
 
@@ -90,6 +91,19 @@ class TestRender(unittest.TestCase):
         self.assertLess(text.index("## 2026-10-06 (Tuesday)"), text.index("## 2026-10-07 (Wednesday)"))
         self.assertEqual(text.count("## 2026-10-07"), 1)
         self.assertLess(text.index("### 08:00"), text.index("### 10:00 - 12:30", text.index("## 2026-10-07")))
+
+    def test_heading_tags_the_project(self) -> None:
+        self.assertIn("### 10:00 - 12:30 | [pilot] Core Engineering\n", render([row("a", repos=["pilot"])]))
+        self.assertIn(
+            "### 10:00 - 12:30 | [devops, pilot] Core Engineering\n",
+            render([row("a", repos=["pilot", "devops"])]),
+        )
+        self.assertIn("### 10:00 - 12:30 | [pilot]\n", render([row("a", title=None, repos=["pilot"])]))
+
+    def test_heading_without_repos_has_no_tag(self) -> None:
+        r = row("a")
+        del r["sources"]["repos"]  # rows logged before `repos` existed
+        self.assertIn("### 10:00 - 12:30 | Core Engineering\n", render([r]))
 
     def test_meeting_with_commits_lists_all_sources(self) -> None:
         text = render([row("e", calendar_event="Review", commits=["a1"], prs=[3])])

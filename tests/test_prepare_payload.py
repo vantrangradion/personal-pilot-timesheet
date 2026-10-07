@@ -87,16 +87,21 @@ class TestBuildBlocks(unittest.TestCase):
             ],
         )
         by_id = {b["block_id"]: b for b in blocks}
-        self.assertEqual(by_id["standup"]["sources"], {"calendar_event": "Daily Standup", "commits": ["a1"], "prs": []})
+        self.assertEqual(by_id["standup"]["sources"], {"calendar_event": "Daily Standup", "commits": ["a1"], "prs": [], "repos": ["pilot"]})
         self.assertEqual(by_id["2026-10-06_focus_1020"]["sources"]["commits"], ["b2", "c3"])
         self.assertIsNone(by_id["2026-10-06_focus_1020"]["sources"]["calendar_event"])
-        self.assertEqual(by_id["focus"]["sources"], {"calendar_event": "Focus: Development", "commits": ["d4"], "prs": [3]})
+        self.assertEqual(by_id["focus"]["sources"], {"calendar_event": "Focus: Development", "commits": ["d4"], "prs": [3], "repos": ["pilot"]})
         self.assertEqual(by_id["2026-10-06_focus_pilot-pr4"]["sources"]["prs"], [4])
+
+    def test_repos_list_every_project_in_the_block(self) -> None:
+        commits = [commit(10, 0, "a1", repo="pilot"), commit(10, 20, "b2", repo="devops"), commit(10, 40, "c3")]
+        blocks = build_blocks(DAY, [], commits, [])
+        self.assertEqual(blocks[0]["sources"]["repos"], ["devops", "pilot"])
 
     def test_event_without_activity_is_still_a_block(self) -> None:
         blocks = build_blocks(DAY, [event("e1", "Sync", (9, 0), (9, 30))], [], [])
         self.assertEqual(spans(blocks), [("e1", "09:00", "09:30")])
-        self.assertEqual(blocks[0]["sources"], {"calendar_event": "Sync", "commits": [], "prs": []})
+        self.assertEqual(blocks[0]["sources"], {"calendar_event": "Sync", "commits": [], "prs": [], "repos": []})
 
     def test_focus_block_does_not_overlap_adjacent_event(self) -> None:
         events = [event("e1", "Review", (10, 0), (10, 10)), event("e2", "1:1", (11, 0), (11, 30))]
@@ -131,7 +136,7 @@ class TestBuildBlocks(unittest.TestCase):
                 ("2026-10-06_focus_1315", "13:15", "15:00"),
             ],
         )
-        self.assertEqual(blocks[3]["sources"], {"calendar_event": None, "commits": ["f", "g"], "prs": [9]})
+        self.assertEqual(blocks[3]["sources"], {"calendar_event": None, "commits": ["f", "g"], "prs": [9], "repos": ["pilot"]})
 
     def test_gap_just_under_threshold_stays_together(self) -> None:
         blocks = build_blocks(DAY, [], [commit(9, 0, "a"), commit(10, 29, "b")], [])
@@ -263,7 +268,7 @@ class TestMain(unittest.TestCase):
                 "date": "2026-10-06",
                 "start_time": "10:00",
                 "end_time": "10:30",
-                "sources": {"calendar_event": None, "commits": ["a1"], "prs": [5]},
+                "sources": {"calendar_event": None, "commits": ["a1"], "prs": [5], "repos": ["pilot"]},
             },
         )
 

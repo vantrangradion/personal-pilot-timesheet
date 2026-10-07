@@ -284,7 +284,8 @@ EPIC 5: Telemetry & Continuous Improvement
         "sources": {
           "calendar_event": "Focus: Development",
           "commits": ["8f3b21a", "b2c3d4e"],
-          "prs": [3]
+          "prs": [3],
+          "repos": ["personal-pilot-timesheet"]
         },
         "created_at": "2026-10-06T16:35:00+07:00"
       }
@@ -332,7 +333,7 @@ EPIC 5: Telemetry & Continuous Improvement
     - **When** `scripts/save_entry.py` finishes persisting entries (or when render script is invoked)
     - **Then** `timesheet.md` is regenerated matching the Section 9 "Edit entry" UI specification
     - **And** entries are grouped chronologically by date under Markdown headers
-    - **And** each block heading shows the block's time range and its `title` (`### <start> - <end> | <title>`)
+    - **And** each block heading shows the block's time range, a `[<project>]` tag naming the repositories its commits and PRs came from (`sources.repos`, comma-separated; omitted when the block has none, e.g. a meeting with no commits), and its `title` (`### <start> - <end> | [<project>] <title>`)
     - **And** each block clearly presents `Date`, `Start time`, `End time`, `Description` (including inline PRs), and `Sources`:
       ```markdown
       # Timesheet Log
@@ -346,7 +347,7 @@ EPIC 5: Telemetry & Continuous Improvement
       - **Description:** Weekly sprint kickoff and timesheet architecture review.
       - **Sources:** Calendar: "Team Standup"
 
-      ### 10:00 - 12:30 | Core Engineering
+      ### 10:00 - 12:30 | [personal-pilot-timesheet] Core Engineering
       - **Date:** 2026-10-06
       - **Start time:** 10:00
       - **End time:** 12:30

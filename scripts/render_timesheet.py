@@ -8,7 +8,9 @@ every upsert; it can also be run on its own to rebuild the view.
 
 - Dates are grouped under `## <date> (<weekday>)` headers, oldest first.
 - Blocks within a date are ordered by start time, then end time, then
-  block_id, under `### <start> - <end> | <title>` headings, each listing the
+  block_id, under `### <start> - <end> | [<repos>] <title>` headings (the
+  `[<repos>]` project tag comes from `sources.repos` and is left out when the
+  block has no commits or PRs), each listing the
   "Edit entry" fields: Date, Start time, End time, Description, and Sources.
 - The output depends only on the rows' content, never on their order in the
   JSONL file or on when the render ran, so unchanged dates and blocks render
@@ -66,11 +68,18 @@ def format_sources(sources: Any) -> str:
     return "; ".join(parts) or "None"
 
 
+def project_tag(sources: Any) -> str:
+    """Return `[repo]` (or `[repo-a, repo-b]`) for the repos a block's commits and PRs came from, or ''."""
+    repos = sources.get("repos") if isinstance(sources, dict) else None
+    names = sorted({one_line(r) for r in repos or [] if one_line(r)})
+    return f"[{', '.join(names)}]" if names else ""
+
+
 def render_block(row: Dict[str, Any]) -> List[str]:
     """Render one timesheet row as a heading and its field list."""
     start, end = one_line(row.get("start_time")), one_line(row.get("end_time"))
-    title = one_line(row.get("title"))
-    heading = f"### {start} - {end}" + (f" | {title}" if title else "")
+    label = " ".join(p for p in (project_tag(row.get("sources")), one_line(row.get("title"))) if p)
+    heading = f"### {start} - {end}" + (f" | {label}" if label else "")
     return [
         heading,
         f"- **Date:** {one_line(row.get('date'))}",

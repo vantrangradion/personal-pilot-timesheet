@@ -181,7 +181,7 @@ class TestRunScript(unittest.TestCase):
         self.assertTrue(summary["partial"])
         self.assertEqual(summary["inserted"], [block_id])
         self.assertEqual(json.loads((self.run_dir / "ai.json").read_text()), json.loads(ai))
-        self.assertIn("| Harvester", (self.root / "timesheet.md").read_text())
+        self.assertIn("| [personal-pilot-timesheet] Harvester", (self.root / "timesheet.md").read_text())
 
         again = self.run_sh("save", DATE, stdin=ai)
         self.assertEqual(json.loads(again.stdout)["unchanged"], [block_id])

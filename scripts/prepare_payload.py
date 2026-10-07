@@ -109,7 +109,11 @@ def load_saved(path: Optional[str], target_date: date) -> Dict[str, Dict[str, An
 
 
 def same_sources(a: Dict[str, Any], b: Dict[str, Any]) -> bool:
-    """True when two source audit trails name the same event, commits, and PRs (order ignored)."""
+    """
+    True when two source audit trails name the same event, commits, and PRs
+    (order ignored). `repos` is ignored: it follows from the commits and PRs,
+    and rows logged before it existed should still be reused.
+    """
     return (
         a.get("calendar_event") == b.get("calendar_event")
         and sorted(a.get("commits") or []) == sorted(b.get("commits") or [])
@@ -359,6 +363,7 @@ def build_blocks(
             "calendar_event": b["title"],
             "commits": [i["hash"] for i in b["items"] if i["kind"] == "commit"],
             "prs": sorted({i["number"] for i in b["items"] if i["kind"] == "pr"}),
+            "repos": sorted({i["repo"] for i in b["items"] if i["repo"]}),
         }
     return blocks
 
