@@ -1,6 +1,6 @@
 ---
 name: timesheet-skill
-description: Personal Pilot Timesheet Logger. Harvests today's git commits, GitHub PRs, and Google Calendar events and logs one timesheet entry per time block into timesheet.jsonl and timesheet.md. Use once per day, or when asked to "log today's work", "update my timesheet", "fill in the timesheet", or "log work for <date>". Safe to re-run; re-runs update entries instead of duplicating them.
+description: Personal Pilot Timesheet Logger. Harvests today's git commits, GitHub PRs, and Google Calendar events and logs one timesheet entry per time block into timesheet.jsonl and timesheet.md, then pushes them to the Gradion Workspace Timesheet app. Use once per day, or when asked to "log today's work", "update my timesheet", "fill in the timesheet", or "log work for <date>". Safe to re-run; re-runs update entries instead of duplicating them.
 compatibility: Requires git, gh (authenticated with `gh auth login`), and python3 with the repo's .venv (Google client libraries). Needs network access to GitHub and the Google Calendar API.
 ---
 
@@ -29,10 +29,12 @@ timesheet-skill/run.sh prepare [YYYY-MM-DD]          # prints the compact AI pay
 timesheet-skill/run.sh save [YYYY-MM-DD] <<'EOF'     # merges, saves, renders
 {"<block id>": {"title": "...", "description": "..."}}
 EOF
+timesheet-skill/run.sh push [YYYY-MM-DD]             # pushes the entries to the Gradion Timesheet app
 ```
 
 Run from the tool repository root, `/Users/van.tran/Documents/dev/personal-pilot-timesheet`.
-Output: `timesheet.jsonl` (source of truth) and `timesheet.md` (review view).
+Output: `timesheet.jsonl` (source of truth), `timesheet.md` (review view), and
+entries in the Gradion Workspace Timesheet app (ids kept in `timesheet-remote.jsonl`).
 
 ## Prerequisites
 
@@ -42,6 +44,7 @@ Output: `timesheet.jsonl` (source of truth) and `timesheet.md` (review view).
 | `gh` | `gh auth status` | `gh auth login` |
 | `python3` | `.venv/bin/python --version` | `python3 -m venv .venv && .venv/bin/pip install --only-binary=:all: -r requirements.txt` |
 | Google Calendar | `token.json` exists | Put the OAuth client in `credentials.json`, then `.venv/bin/python scripts/fetch_calendar.py --auth`. |
+| Gradion Workspace | `security find-generic-password -s gradion-pat` | Create a personal API token (Read + Write, app access: Timesheet only), then `security add-generic-password -a "$USER" -s gradion-pat -w`. |
 
 A missing prerequisite does not abort the run: that source is recorded as
 failed, the other sources are still logged, and nothing is pruned.

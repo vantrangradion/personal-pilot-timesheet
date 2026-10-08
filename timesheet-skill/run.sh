@@ -4,6 +4,7 @@
 #
 #   run.sh prepare [DATE] [--refresh]         steps 1-4: harvest, slice, print the AI payload
 #   run.sh save [DATE] [save_entry.py args]   steps 6-7: merge the AI JSON from stdin, upsert, render
+#   run.sh push [DATE] [push_entries.py args] step 8: push the date's entries to the Gradion Timesheet app
 #
 # DATE is YYYY-MM-DD (default: today). Intermediate files go to
 # $TIMESHEET_RUN_ROOT/<DATE>/ (default: tmp/timesheet/, gitignored). prepare
@@ -17,7 +18,8 @@ PY=.venv/bin/python
 [ -x "$PY" ] || PY=python3
 
 usage() {
-    echo "Usage: $0 prepare [YYYY-MM-DD] [--refresh] | save [YYYY-MM-DD] [save_entry.py args] < ai.json" >&2
+    echo "Usage: $0 prepare [YYYY-MM-DD] [--refresh] | save [YYYY-MM-DD] [save_entry.py args] < ai.json" \
+        "| push [YYYY-MM-DD] [push_entries.py args]" >&2
     exit 2
 }
 
@@ -76,8 +78,16 @@ save() {
     "$PY" scripts/save_entry.py --blocks "$RUN/blocks.json" --entries "$RUN/entries.json" "$@"
 }
 
+push() {
+    # Pass the run's blocks file when there is one, so a partial run is not pushed.
+    local blocks=()
+    [ -f "$RUN/blocks.json" ] && blocks=(--blocks "$RUN/blocks.json")
+    "$PY" scripts/push_entries.py --date "$DATE" ${blocks[@]+"${blocks[@]}"} "$@"
+}
+
 case "$stage" in
     prepare) [ $# -eq 0 ] || { [ $# -eq 1 ] && [ "$1" = --refresh ]; } || usage; prepare "$@" ;;
     save) save "$@" ;;
+    push) push "$@" ;;
     *) usage ;;
 esac

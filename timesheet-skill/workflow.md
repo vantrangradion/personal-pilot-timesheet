@@ -7,7 +7,7 @@ today). Each step is tagged with who does it:
 - **[AI]**: a judgment call by the agent. Only step 5 is one.
 
 Steps 1–4 run as one command and steps 6–7 as another (`timesheet-skill/run.sh`),
-so a run is two tool calls around the [AI] step. Intermediate files go to
+so a run is two tool calls around the [AI] step, plus one for the push (step 8). Intermediate files go to
 `tmp/timesheet/<DATE>/` (gitignored).
 
 ## Steps
@@ -51,8 +51,21 @@ so a run is two tool calls around the [AI] step. Intermediate files go to
 
    Exit 1 with `Error:` from the merge means the reply was not a JSON object:
    redo step 5 once, then rerun this command.
-8. **[Script]** Report: relay the step 7 summary (`inserted`, `updated`,
-   `unchanged`, `removed`, and `partial` with its `failed_sources`) and any
+8. **[Script]** Push to the Gradion Workspace Timesheet app:
+   `scripts/push_entries.py` creates an entry (`log_time`) for each new block,
+   edits (`edit_time`) the entries it pushed earlier whose block changed, and
+   keeps their ids in `timesheet-remote.jsonl`. It pushes nothing for a partial
+   run and never overwrites an entry it did not create.
+
+   ```bash
+   timesheet-skill/run.sh push DATE
+   ```
+
+   Exit 1 means the token is missing or rejected, or a block was refused (e.g. it
+   overlaps an entry logged by hand); the other blocks are still pushed.
+9. **[Script]** Report: relay the step 7 summary (`inserted`, `updated`,
+   `unchanged`, `removed`, and `partial` with its `failed_sources`), the step 8
+   summary (`created`, `updated`, `skipped`, `orphaned`, `failed`), and any
    warnings. Do not paste the timesheet back into the conversation.
 
 ## Token budget
@@ -101,6 +114,10 @@ Input minimization rules for step 5:
 Extra arguments after `DATE` in step 7 go to `save_entry.py`. Use
 `--allow-empty` only when a complete run with no activity should clear that
 date's previously logged blocks.
+
+Extra arguments after `DATE` in step 8 go to `push_entries.py`: `--dry-run`
+prints what would be created or edited without writing, and `--classification`
+picks the project for new entries (default `Gradion Intern Academy 2026`).
 
 `timesheet-skill/run.sh prepare DATE --refresh` sends every block to step 5
 again, even unchanged ones. Use it only when asked to rewrite a day's

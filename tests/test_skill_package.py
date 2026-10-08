@@ -139,7 +139,7 @@ class TestRunScript(unittest.TestCase):
         shutil.copytree(SKILL_DIR, self.root / SKILL_DIR.name)
         scripts = self.root / "scripts"
         scripts.mkdir()
-        for name in ("prepare_payload", "merge_descriptions", "save_entry", "render_timesheet"):
+        for name in ("prepare_payload", "merge_descriptions", "save_entry", "render_timesheet", "push_entries"):
             shutil.copy(REPO_ROOT / "scripts" / f"{name}.py", scripts)
         commits = [{
             "repo": "personal-pilot-timesheet",
@@ -194,6 +194,17 @@ class TestRunScript(unittest.TestCase):
         kept = self.run_sh("save", DATE, stdin="{}")
         self.assertEqual(json.loads(kept.stdout)["unchanged"], [block_id])
         self.assertEqual(len(json.loads(self.run_sh("prepare", DATE, "--refresh").stdout)), 1)
+
+    def test_push_skips_partial_run(self) -> None:
+        prepared = self.run_sh("prepare", DATE)
+        block_id = json.loads(prepared.stdout)[0]["id"]
+        self.run_sh("save", DATE, stdin=json.dumps({block_id: {"title": "T", "description": "D."}}))
+        # The base URL is unreachable: a partial run must return before any request.
+        pushed = self.run_sh("push", DATE, "--base-url", "http://127.0.0.1:9")
+        self.assertEqual(pushed.returncode, 0, pushed.stderr)
+        self.assertEqual(json.loads(pushed.stdout)["failed_sources"], ["calendar"])
+        self.assertIn("nothing pushed", pushed.stderr)
+        self.assertFalse((self.root / "timesheet-remote.jsonl").exists())
 
     def test_save_rejects_non_json(self) -> None:
         self.assertEqual(self.run_sh("prepare", DATE).returncode, 0)
