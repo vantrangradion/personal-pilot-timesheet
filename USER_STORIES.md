@@ -64,7 +64,8 @@ EPIC 2: Time-Block Segmentation & AI Topic Synthesis
 
 EPIC 3: Dual Persistence & Idempotency
   ├── US-3.1: JSONL State Manager & Idempotent Upsert [P0, Script]
-  └── US-3.2: Timesheet Markdown View Renderer [P0, Script]
+  ├── US-3.2: Timesheet Markdown View Renderer [P0, Script]
+  └── US-3.3: Gradion Workspace Timesheet Push [P1, Script]
 
 EPIC 4: Skill Packaging & Daily Workflow Guardrails
   ├── US-4.1: Dual Runner Skill & Workflow Packaging [P0, Spec]
@@ -358,6 +359,47 @@ EPIC 5: Telemetry & Continuous Improvement
     - **Given** modified or appended entries in `timesheet.jsonl`
     - **When** `timesheet.md` is re-rendered
     - **Then** unchanged past dates and blocks remain identical, producing clean, verifiable diffs in Git.
+
+---
+
+#### US-3.3: Gradion Workspace Timesheet Push
+* **Story ID:** `US-3.3`
+* **Type:** `[Script]`
+* **Priority:** P1 (Should-Have)
+* **User Story:**
+  > **As an** Intern,  
+  > **I want** `scripts/push_entries.py` to push each logged block from `timesheet.jsonl` to the Gradion Workspace Timesheet app (`https://workspace.gradion.com/app/timesheet`),  
+  > **So that** my official timesheet is filled from the same verified entries without re-typing them.
+
+* **Integration:** the app's MCP tools, called through the workspace app-tool proxy `POST /api/me/apps/timesheet/tools/<tool>/call` with body `{"arguments": {...}}`, authenticated by a personal API token (`GRADION_PAT`, else the macOS Keychain item `gradion-pat`) scoped to the Read and Write actions and the Timesheet app only. Tools used: `list_my_entries`, `log_time`, `edit_time`. The app has no delete tool.
+
+* **Acceptance Criteria (Given / When / Then):**
+  - **Scenario 1: Create entries for new blocks**
+    - **Given** rows for the target date in `timesheet.jsonl` that were never pushed
+    - **When** `scripts/push_entries.py --date <date>` is executed
+    - **Then** each row is created with `log_time` using its `date`, `start_time` → `startTime`, `end_time` → `endTime`, `description`, and the classification from `--classification` (default `Gradion Intern Academy 2026`)
+    - **And** the returned entry id is recorded in `timesheet-remote.jsonl` (gitignored) keyed on `(date, block_id)` with the fields sent, written atomically after every successful call.
+  - **Scenario 2: Re-runs never duplicate entries**
+    - **Given** a block already pushed
+    - **When** the script runs again
+    - **Then** an unchanged block makes no write call
+    - **And** a block whose time range or description changed is updated in place with `edit_time` (only the changed fields, plus an audit `reason`).
+  - **Scenario 3: Never overwrite entries the tool did not create**
+    - **Given** an entry on the timesheet that is not in `timesheet-remote.jsonl` (e.g. logged by hand)
+    - **When** a local block has the same time range, or overlaps it
+    - **Then** the block is skipped (same range) or reported as failed with the app's overlap error, and other blocks are still pushed.
+  - **Scenario 4: Report what cannot be fixed automatically**
+    - **Given** a pushed entry whose block no longer exists locally (merged or pruned), or that was removed from the timesheet by hand
+    - **When** the script runs
+    - **Then** it is reported on stderr as `orphaned` or `missing` and left untouched.
+  - **Scenario 5: Never push a partial run**
+    - **Given** the run's blocks file (`--blocks`) lists `failed_sources`
+    - **When** the script runs
+    - **Then** no request is sent, and the run is reported as partial.
+  - **Scenario 6: Dry run and failures**
+    - **When** `--dry-run` is passed, **Then** only `list_my_entries` is called and the plan is printed.
+    - **When** the token is missing or rejected, **Then** the script exits non-zero with a diagnostic explaining how to create and store a new token.
+    - **And** stdout is a JSON summary: `created`, `updated`, `unchanged`, `skipped`, `missing`, `orphaned`, `failed`; the exit code is 1 when any block failed.
 
 ---
 
