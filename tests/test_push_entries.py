@@ -230,6 +230,46 @@ class TestPushEntries(unittest.TestCase):
         self.assertEqual(summary["skipped"], ["a"])
         self.assertEqual(len(self.state.entries), 1)
         self.assertIn("not pushed by this tool", err)
+        self.assertIn("--adopt", err)
+
+    def test_adopt_takes_over_entry_with_same_range(self) -> None:
+        entry_id = self.state.add(DATE, "09:00", "10:00", description="[Intern] Security Training")
+        self.state.entries[entry_id]["task"] = "Imported"
+        self.write_rows(row("a", "09:00", "10:00", description="Attended training.", title="Training"))
+        code, summary, _ = self.run_main("--adopt")
+        self.assertEqual((code, summary["adopted"], summary["skipped"]), (0, ["a"], []))
+        self.assertEqual(list(self.state.entries), [entry_id])
+        entry = self.state.entries[entry_id]
+        self.assertEqual((entry["description"], entry["task"]), ("Attended training.", "Training"))
+        self.assertEqual(json.loads(self.state_file.read_text())["entry_id"], entry_id)
+        code, summary, _ = self.run_main()
+        self.assertEqual((code, summary["unchanged"]), (0, ["a"]))
+
+    def test_adopt_clears_task_when_block_has_none(self) -> None:
+        entry_id = self.state.add(DATE, "09:00", "10:00")
+        self.state.entries[entry_id]["task"] = "Imported"
+        self.write_rows(row("a", "09:00", "10:00", title=""))
+        code, summary, _ = self.run_main("--adopt")
+        self.assertEqual((code, summary["adopted"]), (0, ["a"]))
+        self.assertIsNone(self.state.entries[entry_id]["task"])
+
+    def test_adopt_skips_ambiguous_and_overlapping_entries(self) -> None:
+        self.state.add(DATE, "09:00", "10:00")
+        self.state.add(DATE, "09:00", "10:00")
+        self.state.add(DATE, "11:30", "12:30")
+        self.write_rows(row("a", "09:00", "10:00"), row("b", "11:00", "12:00"))
+        code, summary, _ = self.run_main("--adopt")
+        self.assertEqual(code, 1)
+        self.assertEqual((summary["adopted"], summary["skipped"]), ([], ["a"]))
+        self.assertEqual([f["block_id"] for f in summary["failed"]], ["b"])
+
+    def test_adopt_dry_run_writes_nothing(self) -> None:
+        self.state.add(DATE, "09:00", "10:00")
+        self.write_rows(row("a", "09:00", "10:00"))
+        code, summary, _ = self.run_main("--adopt", "--dry-run")
+        self.assertEqual((code, summary["adopted"]), (0, ["a"]))
+        self.assertEqual(self.state.calls, ["list_my_entries"])
+        self.assertFalse(self.state_file.exists())
 
     def test_overlap_fails_that_block_only(self) -> None:
         self.state.add(DATE, "09:30", "10:30")

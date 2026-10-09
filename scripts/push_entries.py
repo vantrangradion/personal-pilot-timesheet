@@ -16,7 +16,10 @@ on `(date, block_id)`, together with the fields last sent, so re-runs are safe:
   is cleared.
 - A pushed block that is unchanged is left alone.
 - A block not pushed by this tool whose time range is already on the timesheet
-  (e.g. logged by hand) is skipped, never overwritten.
+  (e.g. logged by hand) is skipped, never overwritten. With `--adopt`, a single
+  such entry with exactly the block's time range (e.g. one the app imported
+  from the calendar) is taken over instead: its description and task are
+  replaced with `edit_time` and it is recorded as pushed by this tool.
 - A pushed entry whose block no longer exists locally, or that is missing
   remotely, is reported; the app has no delete tool, so it is fixed by hand.
 
@@ -194,19 +197,25 @@ def plan(
     state: Dict[Tuple[str, str], Dict[str, Any]],
     remote: Dict[str, Tuple[str, str]],
     date: str,
+    adopt: bool = False,
 ) -> Dict[str, List[Dict[str, Any]]]:
     """
     Decide the action for each of date's rows. Returns lists of
     {block_id, fields[, entry_id, changes]} per action: `create`, `edit`,
-    `unchanged`, `skipped` (time range already on the timesheet, not ours),
-    `missing` (pushed entry no longer remote), and `orphaned` (pushed entry
-    whose block is gone locally). Edits come before creates, each by start time.
+    `adopt` (with `adopt`, the one entry not ours with exactly the block's
+    time range, taken over), `unchanged`, `skipped` (time range already on the
+    timesheet, not ours), `missing` (pushed entry no longer remote), and
+    `orphaned` (pushed entry whose block is gone locally). Edits and adoptions
+    come before creates, each by start time.
     """
     actions: Dict[str, List[Dict[str, Any]]] = {
-        k: [] for k in ("edit", "create", "unchanged", "skipped", "missing", "orphaned")
+        k: [] for k in ("edit", "adopt", "create", "unchanged", "skipped", "missing", "orphaned")
     }
     owned = {s["entry_id"] for (d, _), s in state.items() if d == date}
-    foreign_ranges = {span for entry_id, span in remote.items() if entry_id not in owned}
+    foreign: Dict[Tuple[str, str], List[str]] = {}
+    for entry_id, span in sorted(remote.items()):
+        if entry_id not in owned:
+            foreign.setdefault(span, []).append(entry_id)
 
     for row in sorted(rows, key=lambda r: (r["start_time"], r["end_time"], r["block_id"])):
         fields = desired_fields(row)
@@ -226,8 +235,15 @@ def plan(
                 actions["edit"].append(item)
             else:
                 actions["unchanged"].append(item)
-        elif (fields["startTime"], fields["endTime"]) in foreign_ranges:
-            actions["skipped"].append(item)
+        elif (fields["startTime"], fields["endTime"]) in foreign:
+            candidates = foreign[(fields["startTime"], fields["endTime"])]
+            if adopt and len(candidates) == 1:
+                item["entry_id"] = candidates.pop()  # an entry is adopted by one block at most
+                # The remote description and task are unknown, so both are sent; no local task clears it.
+                item["changes"] = {"description": fields["description"], "task": fields.get("task")}
+                actions["adopt"].append(item)
+            else:
+                actions["skipped"].append(item)
         else:
             actions["create"].append(item)
 
@@ -290,6 +306,14 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         help=f"Workspace URL (default: $GRADION_WORKSPACE_URL or {DEFAULT_BASE_URL}).",
     )
     parser.add_argument(
+        "--adopt",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Take over an entry this tool did not create when it has exactly a block's time range "
+        "(e.g. imported from the calendar), replacing its description and task (default: off; "
+        "the last of --adopt/--no-adopt wins).",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Read the remote entries and print the plan without creating or editing anything.",
@@ -342,26 +366,28 @@ def main(argv: Optional[List[str]] = None) -> int:
     except (PushError, ToolError) as e:
         sys.stderr.write(f"Error: Cannot list remote entries for {args.date}: {e}\n")
         return 1
-    actions = plan(rows, state, remote, args.date)
+    actions = plan(rows, state, remote, args.date, adopt=args.adopt)
     if args.verbose:
         sys.stderr.write(
             f"{args.date}: {len(rows)} local block(s), {len(remote)} remote entr{'y' if len(remote) == 1 else 'ies'}.\n"
         )
 
-    done: Dict[str, List[str]] = {"created": [], "updated": []}
+    done: Dict[str, List[str]] = {"created": [], "updated": [], "adopted": []}
+    outcome = {"edit": "updated", "adopt": "adopted", "create": "created"}
     failed: List[Dict[str, str]] = []
     now = datetime.now().astimezone().replace(microsecond=0).isoformat()
-    for action in ("edit", "create"):
+    for action in ("edit", "adopt", "create"):
         for item in actions[action]:
             block_id, fields = item["block_id"], item["fields"]
             if args.dry_run:
-                done["updated" if action == "edit" else "created"].append(block_id)
+                done[outcome[action]].append(block_id)
                 continue
             try:
-                if action == "edit":
+                if action in ("edit", "adopt"):
+                    verb = "Re-synced" if action == "edit" else "Adopted"
                     client.call("edit_time", {
                         "entryId": item["entry_id"],
-                        "reason": f"Re-synced from timesheet logger block {block_id}",
+                        "reason": f"{verb} from timesheet logger block {block_id}",
                         **{k: v for k, v in item["changes"].items() if k != "date"},
                     })
                     entry_id = item["entry_id"]
@@ -384,13 +410,13 @@ def main(argv: Optional[List[str]] = None) -> int:
             except OSError as e:
                 sys.stderr.write(f"Error: Pushed {block_id} as {entry_id} but cannot write {state_path}: {e}\n")
                 return 1
-            done["updated" if action == "edit" else "created"].append(block_id)
+            done[outcome[action]].append(block_id)
 
     for item in actions["skipped"]:
         f = item["fields"]
         sys.stderr.write(
             f"Warning: {item['block_id']} skipped: {f['startTime']}-{f['endTime']} is already on the timesheet "
-            "and was not pushed by this tool.\n"
+            "and was not pushed by this tool" + ("" if args.adopt else "; pass --adopt to take it over") + ".\n"
         )
     for item in actions["missing"]:
         sys.stderr.write(

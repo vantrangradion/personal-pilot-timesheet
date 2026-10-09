@@ -5,6 +5,7 @@
 #   run.sh prepare [DATE] [--refresh]         steps 1-4: harvest, slice, print the AI payload
 #   run.sh save [DATE] [save_entry.py args]   steps 6-7: merge the AI JSON from stdin, upsert, render
 #   run.sh push [DATE] [push_entries.py args] step 8: push the date's entries to the Gradion Timesheet app
+#                                             (with --adopt for calendar-imported entries; --no-adopt turns it off)
 #
 # DATE is YYYY-MM-DD (default: today). Intermediate files go to
 # $TIMESHEET_RUN_ROOT/<DATE>/ (default: tmp/timesheet/, gitignored). prepare
@@ -80,9 +81,10 @@ save() {
 
 push() {
     # Pass the run's blocks file when there is one, so a partial run is not pushed.
+    # --adopt takes over entries the app imported from the calendar; a later --no-adopt wins.
     local blocks=()
     [ -f "$RUN/blocks.json" ] && blocks=(--blocks "$RUN/blocks.json")
-    "$PY" scripts/push_entries.py --date "$DATE" ${blocks[@]+"${blocks[@]}"} "$@"
+    "$PY" scripts/push_entries.py --date "$DATE" ${blocks[@]+"${blocks[@]}"} --adopt "$@"
 }
 
 case "$stage" in

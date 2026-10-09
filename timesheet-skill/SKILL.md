@@ -29,7 +29,7 @@ timesheet-skill/run.sh prepare [YYYY-MM-DD]          # prints the compact AI pay
 timesheet-skill/run.sh save [YYYY-MM-DD] <<'EOF'     # merges, saves, renders
 {"<block id>": {"title": "...", "description": "..."}}
 EOF
-timesheet-skill/run.sh push [YYYY-MM-DD]             # pushes the entries to the Gradion Timesheet app
+timesheet-skill/run.sh push [YYYY-MM-DD]             # pushes the entries to the Gradion Timesheet app (adopts calendar-imported entries; --no-adopt to skip them)
 ```
 
 Run from the tool repository root, `/Users/van.tran/Documents/dev/personal-pilot-timesheet`.

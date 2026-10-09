@@ -55,7 +55,10 @@ so a run is two tool calls around the [AI] step, plus one for the push (step 8).
    `scripts/push_entries.py` creates an entry (`log_time`) for each new block,
    edits (`edit_time`) the entries it pushed earlier whose block changed, and
    keeps their ids in `timesheet-remote.jsonl`. It pushes nothing for a partial
-   run and never overwrites an entry it did not create.
+   run and never overwrites an entry it did not create, except that `run.sh push`
+   passes `--adopt`: an entry with exactly a block's time range (e.g. imported
+   from the calendar by the app) is taken over and gets the block's description
+   and task. Pass `--no-adopt` to leave such entries alone (reported `skipped`).
 
    ```bash
    timesheet-skill/run.sh push DATE
@@ -65,7 +68,7 @@ so a run is two tool calls around the [AI] step, plus one for the push (step 8).
    overlaps an entry logged by hand); the other blocks are still pushed.
 9. **[Script]** Report: relay the step 7 summary (`inserted`, `updated`,
    `unchanged`, `removed`, and `partial` with its `failed_sources`), the step 8
-   summary (`created`, `updated`, `skipped`, `orphaned`, `failed`), and any
+   summary (`created`, `updated`, `adopted`, `skipped`, `orphaned`, `failed`), and any
    warnings. Do not paste the timesheet back into the conversation.
 
 ## Token budget

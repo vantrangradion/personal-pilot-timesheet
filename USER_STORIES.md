@@ -388,6 +388,7 @@ EPIC 5: Telemetry & Continuous Improvement
     - **Given** an entry on the timesheet that is not in `timesheet-remote.jsonl` (e.g. logged by hand)
     - **When** a local block has the same time range, or overlaps it
     - **Then** the block is skipped (same range) or reported as failed with the app's overlap error, and other blocks are still pushed.
+    - **And** with `--adopt`, a block whose time range exactly matches a single such entry (e.g. one the app imported from the calendar) takes it over instead: `edit_time` replaces its `description` and `task` (cleared with `task: null` when the block has none), the entry id is recorded in `timesheet-remote.jsonl`, and the block is reported as `adopted`; ambiguous matches (several entries with that range) are still skipped.
   - **Scenario 4: Report what cannot be fixed automatically**
     - **Given** a pushed entry whose block no longer exists locally (merged or pruned), or that was removed from the timesheet by hand
     - **When** the script runs
