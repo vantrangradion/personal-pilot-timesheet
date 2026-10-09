@@ -59,6 +59,8 @@ class FakeTimesheet:
                 return text_result("Entry overlaps an existing entry.", error=True)
             entry_id = self.add(**{"date": entry["date"], "start": entry["startTime"], "end": entry["endTime"],
                                    "description": entry["description"]})
+            if "task" in args:
+                self.entries[entry_id]["task"] = args["task"]
             result = text_result(f"Logged · {entry_id}")
             result["structuredContent"] = {"resources": [{"kind": "entry", "id": entry_id, "label": "x"}]}
             return result
@@ -66,7 +68,8 @@ class FakeTimesheet:
             current = self.entries.get(args["entryId"])
             if current is None:
                 return text_result("Entry not found.", error=True)
-            updated = {**current, **{k: v for k, v in args.items() if k in current}}
+            editable = ("date", "startTime", "endTime", "description", "task")
+            updated = {**current, **{k: v for k, v in args.items() if k in editable}}
             if self.overlaps(updated, skip=args["entryId"]):
                 return text_result("Entry overlaps an existing entry.", error=True)
             self.entries[args["entryId"]] = updated
@@ -100,10 +103,11 @@ def _make_handler(state: FakeTimesheet) -> type:
     return Handler
 
 
-def row(block_id: str, start: str, end: str, description: str = "Did X.", date: str = DATE) -> Dict[str, Any]:
+def row(block_id: str, start: str, end: str, description: str = "Did X.", date: str = DATE,
+        title: str = "Topic") -> Dict[str, Any]:
     return {
         "block_id": block_id, "kind": "focus", "date": date, "start_time": start, "end_time": end,
-        "title": "Topic", "description": description, "sources": {}, "created_at": "2026-10-06T18:00:00+07:00",
+        "title": title, "description": description, "sources": {}, "created_at": "2026-10-06T18:00:00+07:00",
     }
 
 
@@ -165,6 +169,49 @@ class TestPushEntries(unittest.TestCase):
         self.assertEqual(summary["updated"], ["a"])
         (entry,) = self.state.entries.values()
         self.assertEqual((entry["endTime"], entry["description"]), ("10:30", "Did X and Y."))
+
+    def test_title_is_sent_as_task(self) -> None:
+        self.write_rows(row("a", "09:00", "10:00", title="Calendar & Telemetry"), row("b", "11:00", "12:00", title=""))
+        self.run_main()
+        tasks = {e["startTime"]: e.get("task") for e in self.state.entries.values()}
+        self.assertEqual(tasks, {"09:00": "Calendar & Telemetry", "11:00": None})
+
+        self.write_rows(row("a", "09:00", "10:00", title="Token Telemetry"), row("b", "11:00", "12:00", title=""))
+        code, summary, _ = self.run_main()
+        self.assertEqual(code, 0)
+        self.assertEqual((summary["updated"], summary["unchanged"]), (["a"], ["b"]))
+        self.assertIn("Token Telemetry", [e.get("task") for e in self.state.entries.values()])
+
+    def test_block_pushed_without_task_gets_one(self) -> None:
+        self.write_rows(row("a", "09:00", "10:00"))
+        self.run_main()
+        record = json.loads(self.state_file.read_text())
+        del record["pushed"]["task"]  # state written before task was sent
+        self.state_file.write_text(json.dumps(record) + "\n")
+        code, summary, _ = self.run_main()
+        self.assertEqual((code, summary["updated"]), (0, ["a"]))
+
+    def test_emptied_task_is_cleared(self) -> None:
+        self.write_rows(row("a", "09:00", "10:00", title="Push"))
+        self.run_main()
+        self.write_rows(row("a", "09:00", "10:00", title=""))
+        code, summary, _ = self.run_main()
+        self.assertEqual((code, summary["updated"]), (0, ["a"]))
+        (entry,) = self.state.entries.values()
+        self.assertIsNone(entry["task"])
+        code, summary, _ = self.run_main()
+        self.assertEqual((code, summary["unchanged"]), (0, ["a"]))
+
+    def test_task_matches_heading_label(self) -> None:
+        tagged = row("a", "09:00", "10:00", title="Push")
+        tagged["sources"] = {"repos": ["timesheet", "devops"]}
+        self.assertEqual(push_entries.desired_fields(tagged)["task"], "[devops, timesheet] Push")
+        tagged["title"] = ""
+        self.assertEqual(push_entries.desired_fields(tagged)["task"], "[devops, timesheet]")
+
+    def test_task_is_cut_to_app_limit(self) -> None:
+        fields = push_entries.desired_fields(row("a", "09:00", "10:00", title="x" * 200))
+        self.assertEqual(len(fields["task"]), push_entries.TASK_MAX_CHARS)
 
     def test_dry_run_writes_nothing(self) -> None:
         self.write_rows(row("a", "09:00", "10:00"))

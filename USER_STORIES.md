@@ -377,13 +377,13 @@ EPIC 5: Telemetry & Continuous Improvement
   - **Scenario 1: Create entries for new blocks**
     - **Given** rows for the target date in `timesheet.jsonl` that were never pushed
     - **When** `scripts/push_entries.py --date <date>` is executed
-    - **Then** each row is created with `log_time` using its `date`, `start_time` → `startTime`, `end_time` → `endTime`, `description`, and the classification from `--classification` (default `Gradion Intern Academy 2026`)
+    - **Then** each row is created with `log_time` using its `date`, `start_time` → `startTime`, `end_time` → `endTime`, `description`, the block's `timesheet.md` heading label `[<project>] <title>` → `task` (free text, with the `[<project>]` tag from `sources.repos` left out when the block has no repos, as in US-3.2; cut to the app's 150-character limit; omitted when both are empty), and the classification from `--classification` (default `Gradion Intern Academy 2026`)
     - **And** the returned entry id is recorded in `timesheet-remote.jsonl` (gitignored) keyed on `(date, block_id)` with the fields sent, written atomically after every successful call.
   - **Scenario 2: Re-runs never duplicate entries**
     - **Given** a block already pushed
     - **When** the script runs again
     - **Then** an unchanged block makes no write call
-    - **And** a block whose time range or description changed is updated in place with `edit_time` (only the changed fields, plus an audit `reason`).
+    - **And** a block whose time range, description, or task changed (including a block pushed before `task` was sent) is updated in place with `edit_time` (only the changed fields, plus an audit `reason`; a task that became empty is cleared with `task: null`).
   - **Scenario 3: Never overwrite entries the tool did not create**
     - **Given** an entry on the timesheet that is not in `timesheet-remote.jsonl` (e.g. logged by hand)
     - **When** a local block has the same time range, or overlaps it

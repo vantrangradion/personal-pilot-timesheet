@@ -75,10 +75,15 @@ def project_tag(sources: Any) -> str:
     return f"[{', '.join(names)}]" if names else ""
 
 
+def block_label(row: Dict[str, Any]) -> str:
+    """Return a row's `[<repos>] <title>` label (either part left out when empty), or ''."""
+    return " ".join(p for p in (project_tag(row.get("sources")), one_line(row.get("title"))) if p)
+
+
 def render_block(row: Dict[str, Any]) -> List[str]:
     """Render one timesheet row as a heading and its field list."""
     start, end = one_line(row.get("start_time")), one_line(row.get("end_time"))
-    label = " ".join(p for p in (project_tag(row.get("sources")), one_line(row.get("title"))) if p)
+    label = block_label(row)
     heading = f"### {start} - {end}" + (f" | {label}" if label else "")
     return [
         heading,

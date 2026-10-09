@@ -11,7 +11,9 @@ Each pushed block's remote entry id is kept in `timesheet-remote.jsonl`, keyed
 on `(date, block_id)`, together with the fields last sent, so re-runs are safe:
 
 - A block never pushed is created with `log_time`.
-- A pushed block whose time or description changed is updated with `edit_time`.
+- A pushed block whose time, description, or task (its `[<repos>] <title>`
+  heading label) changed is updated with `edit_time`; a task that became empty
+  is cleared.
 - A pushed block that is unchanged is left alone.
 - A block not pushed by this tool whose time range is already on the timesheet
   (e.g. logged by hand) is skipped, never overwritten.
@@ -39,10 +41,10 @@ import urllib.error
 import urllib.request
 
 try:
-    from scripts.render_timesheet import write_text_atomic
+    from scripts.render_timesheet import block_label, write_text_atomic
     from scripts.save_entry import DEFAULT_TIMESHEET, SaveError, load_timesheet, read_json
 except ImportError:  # run as `python scripts/push_entries.py`
-    from render_timesheet import write_text_atomic
+    from render_timesheet import block_label, write_text_atomic
     from save_entry import DEFAULT_TIMESHEET, SaveError, load_timesheet, read_json
 
 DEFAULT_BASE_URL = "https://workspace.gradion.com"
@@ -52,6 +54,7 @@ APP_SLUG = "timesheet"
 TOKEN_ENV = "GRADION_PAT"
 TOKEN_KEYCHAIN_SERVICE = "gradion-pat"
 PAGE_SIZE = 50
+TASK_MAX_CHARS = 150  # the app's limit on the free-text `task` field
 TIMEOUT_SECONDS = 20
 # One list_my_entries text line: "2026-10-05 09:00-12:00 (3h) | ... · <entry uuid>".
 ENTRY_LINE = re.compile(r"^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2})-(\d{2}:\d{2}) .*· ([0-9a-fA-F-]{36})\s*$")
@@ -173,13 +176,17 @@ def save_state(path: Path, state: Dict[Tuple[str, str], Dict[str, Any]]) -> None
 
 
 def desired_fields(row: Dict[str, Any]) -> Dict[str, str]:
-    """Map a timesheet row to the remote entry fields this tool owns."""
-    return {
+    """Map a timesheet row to the remote entry fields this tool owns; the heading label becomes the task."""
+    fields = {
         "date": row["date"],
         "startTime": row["start_time"],
         "endTime": row["end_time"],
         "description": row["description"],
     }
+    task = block_label(row)[:TASK_MAX_CHARS]
+    if task:
+        fields["task"] = task
+    return fields
 
 
 def plan(
@@ -210,7 +217,10 @@ def plan(
             if record["entry_id"] not in remote:
                 actions["missing"].append(item)
                 continue
-            changes = {k: v for k, v in fields.items() if record.get("pushed", {}).get(k) != v}
+            pushed = record.get("pushed", {})
+            changes: Dict[str, Any] = {k: v for k, v in fields.items() if pushed.get(k) != v}
+            if pushed.get("task") and "task" not in fields:
+                changes["task"] = None  # edit_time clears the task on null
             if changes:
                 item["changes"] = changes
                 actions["edit"].append(item)
